@@ -27,7 +27,9 @@ NetWarden.Service (LocalSystem)
         |       TrafficMonitor.Tick() every 1 s -> "activity.snapshot" event to all clients
         |-- RuleRepository (rules.json) -> CompiledRuleSet (immutable, swapped on change)
         |       inputs: ZoneClassifier, DnsMap (ETW DNS-Client), ProcessUsers (token SID)
-        |-- PacketFilterService -> PacketFilter (WinDivert thread) -> Blocker (verdicts, Ask)
+        |-- PacketFilterService -> PacketFilter (WinDivert, priority 100) -> Blocker (verdicts, Ask)
+        |                       -> PacketFilter (WinDivert, priority 0)   -> Limiter (token buckets)
+        |                                                                   + LimiterPump (sends due packets)
         '-- SettingsService  %ProgramData%\NetWarden\settings.json (+ .bak)
 ```
 The pipe only admits Administrators and SYSTEM, so the client requires elevation.
@@ -65,7 +67,7 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 | `rules.save` / `rules.delete` | `RuleDefinition` / `DeleteRequest` | saved rule / `true` |
 | `rules.setEnabled` / `rules.reorder` | `SetRuleEnabledRequest` / `ReorderRulesRequest` | `true` |
 | `rules.evaluate` | `EvaluateRequest` | `FlowDecision` |
-| `packetfilter.status` | - | `PacketFilterStatus` |
+| `packetfilter.status` | - | `PacketFilterStatus` (blocker counters + `Limiter`: delayed, dropped, queued bytes) |
 | `blocker.pending` | - | `BlockerRequest[]` |
 | `blocker.answer` | `BlockerAnswer` | `true` if the request was still pending |
 
@@ -88,6 +90,23 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 - When rules change, established IPv4 TCP connections that are now denied are reset.
 - Fail-open: if the service stops, the WinDivert handle closes and Windows passes traffic normally.
 
+## Limiter notes
+- Diverted: `!loopback and !impostor and (tcp or udp)` - every packet, on a second WinDivert handle
+  at priority 0. The blocker's handle is priority 100, so packets pass the blocker first. A packet a
+  handle re-injects skips every handle of the same or higher priority (live tests use 1000 for that reason).
+- The handle is open only while the Limiter switch is on and at least one limit rule exists.
+- Each flow's owner is looked up once (socket tables) and its limit bindings cached until the rules
+  generation changes. Limits apply to connections that already existed, unlike the blocker.
+- Token bucket per binding (`BucketKey`: rule, or rule + app / pid / flow for per-type filters).
+  Burst = 50 ms of the rate, at least 1514 bytes. Buckets may go into debt: a packet that doesn't fit
+  is queued until the debt is paid; a packet arriving while a bucket's backlog exceeds 500 ms is dropped.
+- Payload bytes are counted (like the Activity view), so "200 KB/s" means the same in both places.
+- Packets of one flow keep their order; other flows are not held behind them.
+- The pump thread uses a 1 ms timer resolution while running. Stopping sends what is still queued.
+- Measured: 200 KB/s download limit -> curl 199 KB/s; 100 KB/s E2E test passes against the installed service.
+- Ignore rules: "ignore limit" is applied by the rule engine; "ignore data" is exposed on
+  `FlowDecision.IgnoreData` for statistics and quotas (phases 6 and 7) to skip that traffic.
+
 ## Rules semantics
 - Filter = AND of functions; a function matches if any of its values matches; "is not" negates.
 - Composite = (any base filter matches) AND its own functions; base filters can't be composite.
@@ -108,6 +127,8 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 
 ## Client notes
 - Client preferences: `%LocalAppData%\NetWarden\client.json`; unhandled UI errors: `client.log` next to it.
+- DL/UL Limit cells: a "quick limit" is one permanent Limit rule on the app's filter per direction.
+  The checkbox enables/disables it (keeping the value); typing a value + Enter sets it and turns it on.
 - Two-way bindings inside DataGrid cells need an explicit `UpdateSourceTrigger=PropertyChanged`,
   otherwise the row BindingGroup defers them forever (read-only grids never commit).
 

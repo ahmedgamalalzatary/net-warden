@@ -9,16 +9,18 @@ using NetWarden.Shared.Ipc;
 
 namespace NetWarden.Service;
 
-/// <summary>Opens the packet device; replaced by a fake in tests.</summary>
-public delegate IPacketDevice PacketDeviceFactory(string filter);
+/// <summary>Opens a packet device for a WinDivert filter at a priority; replaced by a fake in tests.</summary>
+public delegate IPacketDevice PacketDeviceFactory(string filter, short priority);
 
 /// <summary>
-/// Runs the WinDivert packet filter only while something needs it (blocker rules or a
-/// non-Allow default), answers Ask requests, and resets established connections that
-/// newly denied rules cover. Stopping the filter returns Windows to normal traffic.
+/// Runs the WinDivert packet filters only while something needs them: the blocker's
+/// (blocker rules or a non-Allow default) and the limiter's (limit rules with the
+/// Limiter on). Answers Ask requests and resets established connections that newly
+/// denied rules cover. Stopping a filter returns Windows to normal traffic.
 /// </summary>
 public sealed class PacketFilterService(
     Blocker blocker,
+    Limiter limiter,
     RuleRepository rules,
     SettingsService settings,
     ISocketTable sockets,
@@ -33,23 +35,30 @@ public sealed class PacketFilterService(
     public static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(30);
 
     private readonly Lock _lock = new();
-    private PacketFilter? _filter;
-    private string? _error;
-    private DateTimeOffset _lastAttempt = DateTimeOffset.MinValue;
-    private bool _needed;
+    private readonly Slot _blocker = new();
+    private readonly Slot _limiter = new();
+    private LimiterPump? _pump;
 
     public PacketFilterStatus Status
     {
         get
         {
             lock (_lock)
-                return new PacketFilterStatus(_filter?.IsRunning == true, _needed, _error, _filter?.PacketsSeen ?? 0, blocker.Dropped);
+                return StatusLocked();
         }
     }
 
-    /// <summary>Whether the current rules and settings require diverting packets.</summary>
+    private PacketFilterStatus StatusLocked() =>
+        new(_blocker.IsRunning, _blocker.Needed, _blocker.Error, _blocker.Filter?.PacketsSeen ?? 0, blocker.Dropped,
+            new LimiterStatus(_limiter.IsRunning, _limiter.Needed, _limiter.Error, _limiter.Filter?.PacketsSeen ?? 0,
+                limiter.Delayed, limiter.Dropped, limiter.QueuedBytes));
+
+    /// <summary>Whether the current rules and settings require the blocker's filter.</summary>
     public static bool IsNeeded(ServiceSettings s, CompiledRuleSet r) =>
         s.IsBlockerEnabled && (r.HasFirewallRules || s.DefaultFirewallIn != FirewallAction.Allow || s.DefaultFirewallOut != FirewallAction.Allow);
+
+    /// <summary>Whether the current rules and settings require the limiter's filter.</summary>
+    public static bool IsLimiterNeeded(ServiceSettings s, CompiledRuleSet r) => s.IsLimiterEnabled && r.HasLimitRules;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -81,62 +90,101 @@ public sealed class PacketFilterService(
         SweepDeniedConnections();
     }
 
-    /// <summary>Starts or stops the filter to match the configuration; retries failed starts slowly.</summary>
+    /// <summary>Starts or stops the filters to match the configuration; retries failed starts slowly.</summary>
     private void Reconcile(bool force)
     {
         PacketFilterStatus? changed = null;
         lock (_lock)
         {
-            bool before = _filter?.IsRunning == true;
-            string? errorBefore = _error;
-            _needed = options.Value.EnablePacketFilter && IsNeeded(settings.Current, rules.Current);
+            var before = StatusLocked();
+            bool enabled = options.Value.EnablePacketFilter;
+            _blocker.Needed = enabled && IsNeeded(settings.Current, rules.Current);
+            _limiter.Needed = enabled && IsLimiterNeeded(settings.Current, rules.Current);
 
-            if (_filter is { IsRunning: false } dead)
-            {
-                _error = dead.Fault?.Message ?? "Packet filter stopped.";
-                dead.Dispose();
-                _filter = null;
-            }
+            ReconcileSlot(_blocker, "Blocker", force, StartBlocker, StopBlockerLocked);
+            ReconcileSlot(_limiter, "Limiter", force, StartLimiter, StopLimiterLocked);
 
-            if (_needed && _filter is null && (force || time.GetUtcNow() - _lastAttempt > RetryInterval))
-            {
-                _lastAttempt = time.GetUtcNow();
-                try
-                {
-                    _filter = new PacketFilter(openDevice(PacketFilter.BlockerFilter), blocker, logger);
-                    _error = null;
-                    logger.LogInformation("Packet filter started.");
-                }
-                catch (Exception ex)
-                {
-                    _error = ex.Message;
-                    logger.LogError(ex, "Packet filter failed to start.");
-                }
-            }
-            else if (!_needed && _filter is not null)
-            {
-                StopLocked();
-                logger.LogInformation("Packet filter stopped: not needed.");
-            }
-
-            if (before != (_filter?.IsRunning == true) || errorBefore != _error)
-                changed = new PacketFilterStatus(_filter?.IsRunning == true, _needed, _error, _filter?.PacketsSeen ?? 0, blocker.Dropped);
+            var after = StatusLocked();
+            if ((before.IsRunning, before.Error, before.Limiter!.IsRunning, before.Limiter.Error)
+                != (after.IsRunning, after.Error, after.Limiter!.IsRunning, after.Limiter.Error))
+                changed = after;
         }
         if (changed is not null)
             _ = server.BroadcastAsync(Events.FilterStatus, changed);
     }
 
-    private void StopLocked()
+    private void ReconcileSlot(Slot slot, string name, bool force, Func<PacketFilter> start, Action stop)
+    {
+        if (slot.Filter is { IsRunning: false } dead)
+        {
+            slot.Error = dead.Fault?.Message ?? "Packet filter stopped.";
+            stop();
+        }
+
+        if (slot.Needed && slot.Filter is null && (force || time.GetUtcNow() - slot.LastAttempt > RetryInterval))
+        {
+            slot.LastAttempt = time.GetUtcNow();
+            try
+            {
+                slot.Filter = start();
+                slot.Error = null;
+                logger.LogInformation("{Name} packet filter started.", name);
+            }
+            catch (Exception ex)
+            {
+                slot.Error = ex.Message;
+                logger.LogError(ex, "{Name} packet filter failed to start.", name);
+            }
+        }
+        else if (!slot.Needed && slot.Filter is not null)
+        {
+            stop();
+            logger.LogInformation("{Name} packet filter stopped: not needed.", name);
+        }
+    }
+
+    private PacketFilter StartBlocker() =>
+        new(openDevice(PacketFilter.BlockerFilter, PacketFilter.BlockerPriority), blocker, logger, "blocker filter");
+
+    private PacketFilter StartLimiter()
+    {
+        limiter.Reset();
+        var filter = new PacketFilter(openDevice(PacketFilter.LimiterFilter, PacketFilter.LimiterPriority), limiter, logger, "limiter filter");
+        _pump = new LimiterPump(limiter, filter.Inject);
+        return filter;
+    }
+
+    private void StopBlockerLocked()
     {
         // Let waiting connections through rather than leaving them hanging.
         foreach (var request in blocker.Pending)
         {
-            _filter?.Inject(blocker.Resolve(request.Id, allow: true));
+            _blocker.Filter?.Inject(blocker.Resolve(request.Id, allow: true));
             _ = server.BroadcastAsync(Events.BlockerResolved, new BlockerResolved(request.Id, true, TimedOut: false));
         }
-        _filter?.Dispose();
-        _filter = null;
+        _blocker.Filter?.Dispose();
+        _blocker.Filter = null;
         blocker.ClearCache();
+    }
+
+    private void StopLimiterLocked()
+    {
+        // The pump sends what is still queued before the device closes.
+        _pump?.Dispose();
+        _pump = null;
+        _limiter.Filter?.Dispose();
+        _limiter.Filter = null;
+        limiter.Reset();
+    }
+
+    private sealed class Slot
+    {
+        public PacketFilter? Filter;
+        public string? Error;
+        public bool Needed;
+        public DateTimeOffset LastAttempt = DateTimeOffset.MinValue;
+
+        public bool IsRunning => Filter?.IsRunning == true;
     }
 
     private void SweepDeniedConnections()
@@ -171,7 +219,7 @@ public sealed class PacketFilterService(
 
         var packets = blocker.Resolve(request.Id, answer.Allow);
         lock (_lock)
-            _filter?.Inject(packets);
+            _blocker.Filter?.Inject(packets);
         _ = server.BroadcastAsync(Events.BlockerResolved, new BlockerResolved(request.Id, answer.Allow, TimedOut: false));
         return true;
     }
@@ -201,7 +249,10 @@ public sealed class PacketFilterService(
     public override void Dispose()
     {
         lock (_lock)
-            StopLocked();
+        {
+            StopBlockerLocked();
+            StopLimiterLocked();
+        }
         base.Dispose();
     }
 }

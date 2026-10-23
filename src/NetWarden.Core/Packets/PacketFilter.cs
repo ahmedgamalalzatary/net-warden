@@ -107,7 +107,7 @@ public sealed unsafe class WinDivertDevice : IPacketDevice
 }
 
 /// <summary>
-/// Reads diverted packets on a dedicated thread and applies blocker verdicts.
+/// Reads diverted packets on a dedicated thread and applies a processor's verdicts.
 /// Disposing closes the device, after which Windows passes traffic normally.
 /// </summary>
 public sealed class PacketFilter : IDisposable
@@ -115,18 +115,25 @@ public sealed class PacketFilter : IDisposable
     /// <summary>Connection attempts only: TCP SYNs and all UDP. Loopback is never diverted.</summary>
     public const string BlockerFilter = "!loopback and !impostor and ((tcp and tcp.Syn and !tcp.Ack) or udp)";
 
+    /// <summary>Every TCP and UDP packet, for the limiter. Loopback is never diverted.</summary>
+    public const string LimiterFilter = "!loopback and !impostor and (tcp or udp)";
+
+    /// <summary>The blocker sees packets first; what it lets through then reaches the limiter.</summary>
+    public const short BlockerPriority = 100;
+    public const short LimiterPriority = 0;
+
     private readonly IPacketDevice _device;
-    private readonly Blocker _blocker;
+    private readonly IPacketProcessor _processor;
     private readonly ILogger _logger;
     private readonly Thread _thread;
     private long _seen;
 
-    public PacketFilter(IPacketDevice device, Blocker blocker, ILogger logger)
+    public PacketFilter(IPacketDevice device, IPacketProcessor processor, ILogger logger, string name = "packet filter")
     {
         _device = device;
-        _blocker = blocker;
+        _processor = processor;
         _logger = logger;
-        _thread = new Thread(Run) { IsBackground = true, Name = "NetWarden packet filter", Priority = ThreadPriority.AboveNormal };
+        _thread = new Thread(Run) { IsBackground = true, Name = "NetWarden " + name, Priority = ThreadPriority.AboveNormal };
         _thread.Start();
     }
 
@@ -147,7 +154,7 @@ public sealed class PacketFilter : IDisposable
             }
             catch (WinDivertException ex)
             {
-                _logger.LogWarning(ex, "Re-injecting an allowed packet failed.");
+                _logger.LogWarning(ex, "Re-injecting a packet failed.");
             }
         }
     }
@@ -165,7 +172,7 @@ public sealed class PacketFilter : IDisposable
                 try
                 {
                     verdict = PacketParser.Parse(data, address.Outbound) is { } info
-                        ? _blocker.Process(info, data, address)
+                        ? _processor.Process(info, data, address)
                         : PacketVerdict.Pass;
                 }
                 catch (Exception ex)

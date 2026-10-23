@@ -35,9 +35,12 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 3.4 Ask mode: prompt window for new connections, remember / temporary, pending requests list
 
 ## Phase 4 - Limiter
-- [ ] 4.1 DL/UL speed limit rules per filter, global Limiter on/off
-- [ ] 4.2 Per-app / per-process / per-connection limits
-- [ ] 4.3 Ignore rules (ignore limit / ignore data accounting)
+- [x] 4.1 DL/UL speed limit rules per filter, global Limiter on/off
+- [x] 4.2 Per-app / per-process / per-connection limits
+- [x] 4.3 Ignore rules (ignore limit / ignore data accounting)
+
+## Phase 4b - Dark mode
+- [ ] 4b.1 Dark theme for the whole client (main window, grids, dialogs, chart), Light / Dark / Follow Windows setting
 
 ## Phase 5 - Priorities
 - [ ] 5.1 Priority rules: Low / Normal / High / Critical

@@ -49,12 +49,12 @@ public sealed partial class MainViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(ChartHistory));
             Info.Refresh();
-            RefreshBlockStates();
+            RefreshRuleStates();
             // Packet counters change constantly; refresh them every few snapshots.
             if (++_ticks % 3 == 0 && IsConnected)
                 _ = Blocker.LoadAsync();
         };
-        Rules.Reloaded += RefreshBlockStates;
+        Rules.Reloaded += RefreshRuleStates;
 
         _connection.StateChanged += state => _dispatcher.InvokeAsync(() => HandleStateChanged(state));
         _connection.EventReceived += OnServiceEvent;
@@ -109,7 +109,7 @@ public sealed partial class MainViewModel : ObservableObject
     private async Task SetZoneAsync(Guid filter, RuleDirection direction, bool block)
     {
         await Blocker.SetBlockedAsync(filter, null, direction, block);
-        RefreshBlockStates();
+        RefreshRuleStates();
     }
 
     /// <summary>Quick block for one app from the activity grid.</summary>
@@ -118,10 +118,36 @@ public sealed partial class MainViewModel : ObservableObject
         if (row.App?.App is not { } app)
             return;
         await Blocker.SetBlockedAsync(null, app, direction, block);
-        RefreshBlockStates();
+        RefreshRuleStates();
     }
 
-    private void RefreshBlockStates()
+    /// <summary>Turns an app's quick limit on or off (In = download, Out = upload).</summary>
+    public Task<bool> SetAppLimitedAsync(ActivityRow row, RuleDirection direction, bool enable) =>
+        ChangeAppLimitAsync(row, enable, (existing, filter) => QuickLimit.Toggle(existing, filter, direction, enable), direction);
+
+    /// <summary>Sets an app's quick-limit value in KB/s, turning the limit on.</summary>
+    public Task<bool> SetAppLimitAsync(ActivityRow row, RuleDirection direction, double kilobytes) =>
+        ChangeAppLimitAsync(row, true, (existing, filter) => QuickLimit.SetValue(existing, filter, direction, kilobytes), direction);
+
+    private async Task<bool> ChangeAppLimitAsync(ActivityRow row, bool createFilter,
+        Func<RuleDefinition?, Guid, RuleDefinition?> plan, RuleDirection direction)
+    {
+        if (row.App?.App is not { } app)
+            return false;
+        Guid? filter = QuickBlock.AppFilterId(Rules.Snapshot, app.Id);
+        if (filter is null && createFilter)
+            filter = (await Rules.EnsureAppFilterAsync(app))?.Id;
+        bool ok = true;
+        if (filter is { } id && plan(QuickLimit.Find(Rules.Snapshot, id, direction), id) is { } rule)
+            ok = await Rules.SaveRuleAsync(rule);
+        else if (filter is null && createFilter)
+            ok = false;
+        RefreshRuleStates();
+        return ok;
+    }
+
+    /// <summary>Puts the quick block and quick limit cells in line with the rules.</summary>
+    private void RefreshRuleStates()
     {
         var snapshot = Rules.Snapshot;
         foreach (var row in Activity.Rows.Where(r => r.IsApp && r.App is not null))
@@ -129,6 +155,12 @@ public sealed partial class MainViewModel : ObservableObject
             Guid? filter = QuickBlock.AppFilterId(snapshot, row.App!.App.Id);
             row.IsBlockedIn = QuickBlock.IsBlocked(snapshot, filter, RuleDirection.In);
             row.IsBlockedOut = QuickBlock.IsBlocked(snapshot, filter, RuleDirection.Out);
+            var limitIn = QuickLimit.Find(snapshot, filter, RuleDirection.In);
+            var limitOut = QuickLimit.Find(snapshot, filter, RuleDirection.Out);
+            row.IsLimitedIn = QuickLimit.IsLimited(limitIn);
+            row.IsLimitedOut = QuickLimit.IsLimited(limitOut);
+            row.LimitInText = QuickLimit.Format(QuickLimit.Kilobytes(limitIn));
+            row.LimitOutText = QuickLimit.Format(QuickLimit.Kilobytes(limitOut));
         }
         foreach (string name in new[] { nameof(BlockInternetIn), nameof(BlockInternetOut), nameof(BlockLocalIn), nameof(BlockLocalOut) })
             OnPropertyChanged(name);

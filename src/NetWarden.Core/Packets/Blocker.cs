@@ -19,7 +19,7 @@ public sealed record HeldPacket(byte[] Data, WinDivertAddress Address);
 /// flow, caches the verdict, and parks Ask flows until they are answered or time out.
 /// Thread-safe: packets arrive on the filter thread, answers on IPC threads.
 /// </summary>
-public sealed class Blocker
+public sealed class Blocker : IPacketProcessor
 {
     public static readonly TimeSpan DefaultAskTimeout = TimeSpan.FromSeconds(60);
     public static readonly TimeSpan FlowCacheLifetime = TimeSpan.FromMinutes(2);

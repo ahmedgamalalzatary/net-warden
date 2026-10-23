@@ -165,7 +165,7 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
         {
             await WpfHarness.Settle();
             var row = WpfHarness.Descendants<DataGridRow>(Grid).Single(r => ((ActivityRow)r.Item).Name == "Browser");
-            var box = WpfHarness.Descendants<CheckBox>(row).Single(c => (string)c.Tag == "Out");
+            var box = WpfHarness.Descendants<CheckBox>(row).Single(c => (string)c.Tag == "Out" && c.ToolTip is string t && t.StartsWith("Block"));
             // OnClick is what a mouse click runs (it toggles and raises Click).
             typeof(ButtonBase).GetMethod("OnClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                 .Invoke(box, null);
@@ -176,6 +176,29 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
         var rule = Assert.Single(_savedRules);
         Assert.Equal(BrowserFilter.Id, rule.FilterId);
         Assert.Equal((RuleDirection.Out, FirewallAction.Deny), (rule.Direction, rule.Action!.Value));
+    }
+
+    [Fact]
+    public async Task Typing_a_download_limit_and_pressing_enter_saves_a_limit_rule()
+    {
+        await wpf.RunAsync(async () =>
+        {
+            await WpfHarness.Settle();
+            var row = WpfHarness.Descendants<DataGridRow>(Grid).Single(r => ((ActivityRow)r.Item).Name == "Browser");
+            var box = WpfHarness.Descendants<TextBox>(row).Single(t => (string)t.Tag == "In");
+            Assert.Equal("100", box.Text);
+            box.Focus();
+            box.Text = "250";
+            box.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
+                System.Windows.PresentationSource.FromVisual(box)!, 0, System.Windows.Input.Key.Enter)
+            { RoutedEvent = System.Windows.UIElement.KeyDownEvent });
+            for (int i = 0; i < 50 && _savedRules.Count == 0; i++)
+                await WpfHarness.Settle(30);
+        });
+
+        var rule = Assert.Single(_savedRules);
+        Assert.Equal((BrowserFilter.Id, RuleKind.Limit, RuleDirection.In, 250 * 1024L, true),
+            (rule.FilterId, rule.Kind, rule.Direction, rule.LimitBytesPerSecond!.Value, rule.IsEnabled));
     }
 
     [Fact]

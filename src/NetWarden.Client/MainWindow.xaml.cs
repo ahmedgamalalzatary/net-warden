@@ -249,6 +249,70 @@ public partial class MainWindow : Window
             ShowError(error);
     }
 
+    // ----- Quick limit -----
+
+    private static RuleDirection DirectionOf(FrameworkElement element) => (string)element.Tag == "In" ? RuleDirection.In : RuleDirection.Out;
+
+    private static string LimitText(ActivityRow row, RuleDirection direction) =>
+        direction == RuleDirection.In ? row.LimitInText : row.LimitOutText;
+
+    private async void QuickLimit_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { DataContext: ActivityRow row } box || ViewModel is not { } vm)
+            return;
+        var direction = DirectionOf(box);
+        bool enable = direction == RuleDirection.In ? !row.IsLimitedIn : !row.IsLimitedOut;
+        // A value typed but not yet committed is what the user means to apply.
+        if (enable && box.Parent is Panel { Children: [_, TextBox text] } && text.Text.Trim() != LimitText(row, direction)
+            && QuickLimit.Parse(text.Text) is { } typed)
+            await vm.SetAppLimitAsync(row, direction, typed);
+        else
+            await vm.SetAppLimitedAsync(row, direction, enable);
+        box.IsChecked = direction == RuleDirection.In ? row.IsLimitedIn : row.IsLimitedOut;
+        if (vm.Rules.LastError is { } error)
+            ShowError(error);
+    }
+
+    private async void LimitBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox box)
+            return;
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            await CommitLimit(box);
+        }
+        else if (e.Key == Key.Escape && box.DataContext is ActivityRow row)
+        {
+            e.Handled = true;
+            box.Text = LimitText(row, DirectionOf(box));
+        }
+    }
+
+    private async void LimitBox_LostFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is TextBox box)
+            await CommitLimit(box);
+    }
+
+    private async Task CommitLimit(TextBox box)
+    {
+        if (box.DataContext is not ActivityRow row || ViewModel is not { } vm)
+            return;
+        var direction = DirectionOf(box);
+        if (box.Text.Trim() == LimitText(row, direction))
+            return;
+        if (QuickLimit.Parse(box.Text) is not { } kilobytes)
+        {
+            box.Text = LimitText(row, direction);
+            return;
+        }
+        await vm.SetAppLimitAsync(row, direction, kilobytes);
+        box.Text = LimitText(row, direction);
+        if (vm.Rules.LastError is { } error)
+            ShowError(error);
+    }
+
     private async void PendingAllow_Click(object sender, RoutedEventArgs e) => await AnswerPending(sender, true);
 
     private async void PendingDeny_Click(object sender, RoutedEventArgs e) => await AnswerPending(sender, false);

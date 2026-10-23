@@ -1,3 +1,4 @@
+using System.Net.Http;
 using NetWarden.Shared.Contracts;
 using NetWarden.Shared.Ipc;
 
@@ -107,6 +108,45 @@ public class InstalledServiceTests
         }
 
         Assert.True(await CanConnect(target), "Connection still blocked after the rule was removed.");
+    }
+
+    [InstalledServiceFact]
+    public async Task Installed_service_limits_download_speed()
+    {
+        await using var client = new ServiceClient();
+        await client.ConnectAsync(TimeSpan.FromSeconds(5));
+        const string Url = "https://speed.cloudflare.com/__down?bytes=400000";
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        try
+        {
+            await http.GetByteArrayAsync("https://speed.cloudflare.com/__down?bytes=1000");
+        }
+        catch (HttpRequestException)
+        {
+            return; // no Internet
+        }
+
+        var filter = (await client.RequestAsync<FilterDefinition>(Methods.FiltersSave, new FilterDefinition(Guid.Empty,
+            $"E2E limit {Guid.NewGuid():N}", FilterType.Filter, FilterPerType.None,
+            [new FilterFunction(FilterFunctionKind.ProcessId, true, [Environment.ProcessId.ToString()])], [])))!;
+        try
+        {
+            await client.RequestAsync<RuleDefinition>(Methods.RulesSave, new RuleDefinition(Guid.Empty, filter.Id,
+                RuleKind.Limit, RuleDirection.In, LimitBytesPerSecond: 100 * 1024));
+            for (int i = 0; i < 50 && (await client.RequestAsync<PacketFilterStatus>(Methods.FilterStatus))!.Limiter?.IsRunning != true; i++)
+                await Task.Delay(100);
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            byte[] body = await http.GetByteArrayAsync(Url);
+            double rate = body.Length / watch.Elapsed.TotalSeconds;
+
+            Assert.Equal(400_000, body.Length);
+            Assert.InRange(rate, 50 * 1024, 115 * 1024);
+        }
+        finally
+        {
+            await client.RequestAsync<bool>(Methods.FiltersDelete, new DeleteRequest(filter.Id));
+        }
     }
 
     private static async Task<PacketFilterStatus> WaitForStatus(ServiceClient client, bool running)

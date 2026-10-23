@@ -22,6 +22,15 @@
             <Setter Property="FontFamily" Value="Segoe UI" />
         </Style>
 
+        <Style x:Key="LimitBox" TargetType="TextBox">
+            <Setter Property="Width" Value="54" />
+            <Setter Property="Margin" Value="4,0,0,0" />
+            <Setter Property="Padding" Value="2,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
         <Style x:Key="ToolbarLabel" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,0,6,0" />
@@ -81,6 +90,7 @@
                 </Ellipse>
                 <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
                 <TextBlock Text="{Binding Activity.LastError}" Foreground="{StaticResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding Blocker.LimiterStatusText}" Foreground="{StaticResource MutedText}" Margin="16,0,0,0" VerticalAlignment="Center" />
                 <TextBlock Text="{Binding ServiceSummary}" Foreground="{StaticResource MutedText}"
                            HorizontalAlignment="Right" VerticalAlignment="Center" />
             </DockPanel>
@@ -207,7 +217,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="Block in" Width="62" CanUserSort="False">
+                    <DataGridTemplateColumn Header="Block in" Width="70" CanUserSort="False">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate DataType="{x:Type vm:ActivityRow}">
                                 <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Tag="In"
@@ -217,13 +227,37 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="Block out" Width="68" CanUserSort="False">
+                    <DataGridTemplateColumn Header="Block out" Width="78" CanUserSort="False">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate DataType="{x:Type vm:ActivityRow}">
                                 <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Tag="Out"
                                           IsChecked="{Binding IsBlockedOut, Mode=OneWay}" Click="QuickBlock_Click"
                                           Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}"
                                           ToolTip="Block outgoing connections of this app" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="DL Limit" Width="96" CanUserSort="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate DataType="{x:Type vm:ActivityRow}">
+                                <StackPanel Orientation="Horizontal" Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}"
+                                            ToolTip="Limit the download speed of this app in KB/s. Type a value and press Enter.">
+                                    <CheckBox VerticalAlignment="Center" Tag="In" IsChecked="{Binding IsLimitedIn, Mode=OneWay}" Click="QuickLimit_Click" />
+                                    <TextBox Tag="In" Text="{Binding LimitInText, Mode=OneWay}" Style="{StaticResource LimitBox}"
+                                             KeyDown="LimitBox_KeyDown" LostKeyboardFocus="LimitBox_LostFocus" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="UL Limit" Width="96" CanUserSort="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate DataType="{x:Type vm:ActivityRow}">
+                                <StackPanel Orientation="Horizontal" Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}"
+                                            ToolTip="Limit the upload speed of this app in KB/s. Type a value and press Enter.">
+                                    <CheckBox VerticalAlignment="Center" Tag="Out" IsChecked="{Binding IsLimitedOut, Mode=OneWay}" Click="QuickLimit_Click" />
+                                    <TextBox Tag="Out" Text="{Binding LimitOutText, Mode=OneWay}" Style="{StaticResource LimitBox}"
+                                             KeyDown="LimitBox_KeyDown" LostKeyboardFocus="LimitBox_LostFocus" />
+                                </StackPanel>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>

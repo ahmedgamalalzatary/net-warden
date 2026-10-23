@@ -64,7 +64,7 @@ public sealed class PacketFilterServiceTests : IAsyncLifetime
             ["NetWarden:RestrictPipeToAdmins"] = "false",
             ["NetWarden:DataDirectory"] = _dir.Path,
             ["NetWarden:EnableTrafficSource"] = "false",
-        }, services => services.AddSingleton<PacketDeviceFactory>(_ => filter =>
+        }, services => services.AddSingleton<PacketDeviceFactory>(_ => (filter, _) =>
         {
             var device = new FakePacketDevice { Filter = filter };
             _devices.Enqueue(device);
@@ -172,6 +172,42 @@ public sealed class PacketFilterServiceTests : IAsyncLifetime
         var rule = (await _client.RequestAsync<RulesSnapshot>(Methods.RulesGet))!.Rules.Single(r => r.Rule.Kind == RuleKind.Firewall).Rule;
         Assert.Equal(FirewallAction.Deny, rule.Action);
         Assert.InRange(rule.ExpiresAt!.Value - DateTimeOffset.UtcNow, TimeSpan.FromMinutes(14), TimeSpan.FromMinutes(16));
+    }
+
+    [Fact]
+    public async Task Limiter_filter_runs_while_limit_rules_exist_and_the_limiter_is_on()
+    {
+        using var udp = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
+        int port = ((IPEndPoint)udp.Client.LocalEndPoint!).Port;
+        var filter = (await _client.RequestAsync<FilterDefinition>(Methods.FiltersSave, new FilterDefinition(Guid.Empty, "This test",
+            FilterType.Filter, FilterPerType.None, [new FilterFunction(FilterFunctionKind.ProcessId, true, [Environment.ProcessId.ToString()])], [])))!;
+        await _client.RequestAsync<RuleDefinition>(Methods.RulesSave,
+            new RuleDefinition(Guid.Empty, filter.Id, RuleKind.Limit, RuleDirection.Out, LimitBytesPerSecond: 1000));
+
+        var device = await Eventually(() => Task.FromResult(_devices.TryPeek(out var d) ? d : null), "limiter device");
+        Assert.Equal(PacketFilter.LimiterFilter, device.Filter);
+        var status = (await _client.RequestAsync<PacketFilterStatus>(Methods.FilterStatus))!;
+        Assert.True(status.Limiter!.IsRunning);
+        Assert.False(status.IsRunning); // no blocker rules: the blocker filter stays off
+
+        // 1 KB/s with a 1514-byte burst: the first packets pass, then they queue.
+        for (int i = 0; i < 60; i++)
+            device.Push(Raw.Udp4("192.168.1.14", port, "203.0.113.7", 9, payload: 100), outbound: true);
+        await Eventually(async () => (await _client.RequestAsync<PacketFilterStatus>(Methods.FilterStatus))!.Limiter!.PacketsDelayed > 0 ? (bool?)true : null, "delayed packets");
+        Assert.NotEmpty(device.Sent);
+
+        var s = (await _client.RequestAsync<ServiceSettings>(Methods.SettingsGet))!;
+        s.IsLimiterEnabled = false;
+        await _client.RequestAsync<ServiceSettings>(Methods.SettingsUpdate, s);
+        await Eventually(() => Task.FromResult(device.Disposed ? (bool?)true : null), "limiter stop");
+        // Whatever was queued is sent before the device closes.
+        Assert.Equal(60 - (int)(await _client.RequestAsync<PacketFilterStatus>(Methods.FilterStatus))!.Limiter!.PacketsDropped, device.Sent.Count);
+    }
+
+    [Fact]
+    public void Limiter_need_requires_limit_rules_and_the_switch()
+    {
+        Assert.False(PacketFilterService.IsLimiterNeeded(new ServiceSettings(), NetWarden.Core.Rules.CompiledRuleSet.Empty));
     }
 
     [Fact]

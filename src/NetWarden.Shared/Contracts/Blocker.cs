@@ -43,4 +43,9 @@ public sealed record BlockerAnswer(
 public sealed record BlockerResolved(Guid RequestId, bool Allowed, bool TimedOut);
 
 /// <summary>Whether packet filtering is running and why not.</summary>
-public sealed record PacketFilterStatus(bool IsRunning, bool IsNeeded, string? Error, long PacketsSeen, long PacketsDropped);
+public sealed record PacketFilterStatus(bool IsRunning, bool IsNeeded, string? Error, long PacketsSeen, long PacketsDropped,
+    LimiterStatus? Limiter = null);
+
+/// <summary>The limiter's own packet filter: <see cref="PacketsDelayed"/> waited for their limit, <see cref="PacketsDropped"/> overflowed it.</summary>
+public sealed record LimiterStatus(bool IsRunning, bool IsNeeded, string? Error, long PacketsSeen, long PacketsDelayed, long PacketsDropped,
+    long QueuedBytes);

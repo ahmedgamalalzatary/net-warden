@@ -54,6 +54,20 @@ public sealed partial class ActivityRow : ObservableObject
     [ObservableProperty]
     private bool _isBlockedOut;
 
+    /// <summary>A quick-limit rule caps this app's download (In) or upload (Out).</summary>
+    [ObservableProperty]
+    private bool _isLimitedIn;
+
+    [ObservableProperty]
+    private bool _isLimitedOut;
+
+    /// <summary>The quick-limit value in KB/s, shown even while the limit is off.</summary>
+    [ObservableProperty]
+    private string _limitInText = "";
+
+    [ObservableProperty]
+    private string _limitOutText = "";
+
     [ObservableProperty]
     private long _rateIn;
 

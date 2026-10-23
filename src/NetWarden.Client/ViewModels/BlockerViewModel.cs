@@ -56,7 +56,7 @@ public sealed partial class BlockerViewModel(IServiceRequester service, RulesVie
     public ObservableCollection<BlockerRequest> Pending { get; } = [];
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusText))]
+    [NotifyPropertyChangedFor(nameof(StatusText), nameof(LimiterStatusText))]
     private PacketFilterStatus? _status;
 
     [ObservableProperty]
@@ -71,6 +71,15 @@ public sealed partial class BlockerViewModel(IServiceRequester service, RulesVie
         { IsRunning: true } s => $"Filtering connections · {s.PacketsSeen:N0} packets inspected · {s.PacketsDropped:N0} dropped",
         { IsNeeded: false } => "Idle: no blocker rules and default actions allow everything",
         _ => "Starting...",
+    };
+
+    public string LimiterStatusText => Status?.Limiter switch
+    {
+        null => "",
+        { Error: { } error } => "Limiter error: " + error,
+        { IsRunning: true } l => $"Limiting · {l.PacketsDelayed:N0} packets delayed · {l.PacketsDropped:N0} dropped",
+        { IsNeeded: false } => "Limiter idle: no active limits",
+        _ => "Limiter starting...",
     };
 
     /// <summary>Raised when a new request arrives, so the window can show the prompt.</summary>

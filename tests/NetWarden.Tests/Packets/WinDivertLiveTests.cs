@@ -61,8 +61,10 @@ public sealed class WinDivertLiveTests : IDisposable
         }
     }
 
+    // Above the installed service's handles: a packet re-injected by a handle skips
+    // every handle of the same or higher priority, so a tie would hide packets from us.
     private PacketFilter StartFilter() =>
-        new(new WinDivertDevice(PacketFilter.BlockerFilter), _blocker, NullLogger.Instance);
+        new(new WinDivertDevice(PacketFilter.BlockerFilter, priority: 1000), _blocker, NullLogger.Instance);
 
     [AdminFact]
     public void Driver_opens_and_closes()

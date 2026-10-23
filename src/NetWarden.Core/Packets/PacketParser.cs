@@ -16,7 +16,8 @@ public readonly record struct PacketInfo(
     bool IsSyn,
     bool IsAck,
     bool IsFin,
-    bool IsRst)
+    bool IsRst,
+    int PayloadLength = 0)
 {
     /// <summary>A connection attempt: SYN without ACK.</summary>
     public bool IsConnectionStart => Protocol == TransportProtocol.Tcp && IsSyn && !IsAck;
@@ -87,6 +88,7 @@ public static class PacketParser
         TransportProtocol transport;
         int srcPort, dstPort;
         bool syn = false, ack = false, fin = false, rst = false;
+        int payload;
         if (protocol == ProtoTcp)
         {
             if (packet.Length < offset + 20)
@@ -99,6 +101,7 @@ public static class PacketParser
             syn = (flags & 0x02) != 0;
             rst = (flags & 0x04) != 0;
             ack = (flags & 0x10) != 0;
+            payload = packet.Length - offset - (packet[offset + 12] >> 4) * 4;
         }
         else if (protocol == ProtoUdp)
         {
@@ -107,14 +110,16 @@ public static class PacketParser
             transport = TransportProtocol.Udp;
             srcPort = BinaryPrimitives.ReadUInt16BigEndian(packet[offset..]);
             dstPort = BinaryPrimitives.ReadUInt16BigEndian(packet[(offset + 2)..]);
+            payload = packet.Length - offset - 8;
         }
         else
         {
             return null;
         }
+        payload = Math.Max(0, payload);
 
         return outbound
-            ? new PacketInfo(transport, true, src, srcPort, dst, dstPort, packet.Length, syn, ack, fin, rst)
-            : new PacketInfo(transport, false, dst, dstPort, src, srcPort, packet.Length, syn, ack, fin, rst);
+            ? new PacketInfo(transport, true, src, srcPort, dst, dstPort, packet.Length, syn, ack, fin, rst, payload)
+            : new PacketInfo(transport, false, dst, dstPort, src, srcPort, packet.Length, syn, ack, fin, rst, payload);
     }
 }

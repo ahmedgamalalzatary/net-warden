@@ -97,7 +97,12 @@ public static class ServiceHost
             sp.GetRequiredService<IFlowOwnerLookup>(),
             sp.GetRequiredService<FlowContextFactory>(),
             sp.GetRequiredService<TimeProvider>()));
-        services.AddSingleton<PacketDeviceFactory>(_ => filter => new WinDivertDevice(filter));
+        services.AddSingleton(sp => new Limiter(
+            () => sp.GetRequiredService<RuleRepository>().Current,
+            sp.GetRequiredService<IFlowOwnerLookup>(),
+            sp.GetRequiredService<FlowContextFactory>(),
+            sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton<PacketDeviceFactory>(_ => (filter, priority) => new WinDivertDevice(filter, priority));
         services.AddSingleton<PacketFilterService>();
 
         // IPC

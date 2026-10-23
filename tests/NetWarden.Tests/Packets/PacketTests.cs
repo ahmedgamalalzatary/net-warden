@@ -41,11 +41,13 @@ internal static class Raw
         return p;
     }
 
-    public static byte[] Udp4(string src, int srcPort, string dst, int dstPort)
+    public static byte[] Udp4(string src, int srcPort, string dst, int dstPort, int payload = 0)
     {
-        var p = Tcp4(src, srcPort, dst, dstPort);
+        var p = Tcp4(src, srcPort, dst, dstPort, payload: payload)[..(28 + payload)];
         p[9] = 17;
-        return p[..28];
+        p[2] = (byte)(p.Length >> 8);
+        p[3] = (byte)p.Length;
+        return p;
     }
 
     private static void Ports(byte[] p, int offset, int src, int dst)
@@ -61,6 +63,15 @@ internal static class Raw
 
 public class PacketParserTests
 {
+    [Fact]
+    public void Payload_length_excludes_ip_and_transport_headers()
+    {
+        Assert.Equal(1000, PacketParser.Parse(Raw.Tcp4("192.168.1.14", 1, "1.1.1.1", 2, flags: 0x18, payload: 1000), true)!.Value.PayloadLength);
+        Assert.Equal(0, PacketParser.Parse(Raw.Tcp4("192.168.1.14", 1, "1.1.1.1", 2), true)!.Value.PayloadLength);
+        Assert.Equal(300, PacketParser.Parse(Raw.Udp4("192.168.1.14", 1, "1.1.1.1", 2, payload: 300), true)!.Value.PayloadLength);
+        Assert.Equal(12, PacketParser.Parse(Raw.Udp6("fe80::1", 1, "fe80::2", 2, payload: 12), true)!.Value.PayloadLength);
+    }
+
     [Fact]
     public void Outbound_ipv4_syn_is_oriented_local_to_remote()
     {
