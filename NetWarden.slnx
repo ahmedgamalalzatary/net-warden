@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NetWarden.Client/NetWarden.Client.csproj" />
+    <Project Path="src/NetWarden.Core/NetWarden.Core.csproj" />
+    <Project Path="src/NetWarden.Service/NetWarden.Service.csproj" />
+    <Project Path="src/NetWarden.Shared/NetWarden.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NetWarden.Tests/NetWarden.Tests.csproj" />
+  </Folder>
+</Solution>

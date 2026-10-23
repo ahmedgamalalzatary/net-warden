@@ -8,14 +8,14 @@ Packet limiting via WinDivert (signed, LGPL); blocking via Windows Filtering Pla
 Status: [ ] todo  [~] in progress  [x] done
 
 ## Phase 0 - Foundation
-- [ ] 0.1 Solution layout: Service, Client (WPF), Shared (contracts), Core (engine)
-- [ ] 0.2 Windows service host, install/uninstall, runs elevated
-- [ ] 0.3 Client <-> service IPC (named pipe), connection state
-- [ ] 0.4 App identity: desktop apps, Windows services (svchost split), Store apps; name/company/version/icon
-- [ ] 0.5 Settings storage (JSON) in ProgramData
+- [x] 0.1 Solution layout: Service, Client (WPF), Shared (contracts), Core (engine)
+- [x] 0.2 Windows service host, install/uninstall, runs elevated
+- [x] 0.3 Client <-> service IPC (named pipe), connection state
+- [x] 0.4 App identity: desktop apps, Windows services (svchost split), Store apps; name/company/version
+- [x] 0.5 Settings storage (JSON) in ProgramData
 
 ## Phase 1 - Monitoring
-- [ ] 1.1 Activity view: per-app DL/UL rate and DL/UL totals, live refresh
+- [ ] 1.1 Activity view: per-app DL/UL rate and DL/UL totals, live refresh, app icons
 - [ ] 1.2 App -> connections tree (protocol, local/remote addr+port, type: connect/accept/listen)
 - [ ] 1.3 View options: online/offline/all/hidden, search, units (auto bytes/bits), column selection, reset totals
 - [ ] 1.4 Info pane: app properties, process id, connection properties, port names, reverse DNS
