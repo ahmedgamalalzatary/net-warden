@@ -211,6 +211,26 @@ public sealed class PacketFilterServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Priority_rules_start_the_limiter_filter_while_priorities_are_on()
+    {
+        var s = (await _client.RequestAsync<ServiceSettings>(Methods.SettingsGet))!;
+        s.IsLimiterEnabled = false;
+        await _client.RequestAsync<ServiceSettings>(Methods.SettingsUpdate, s);
+        await _client.RequestAsync<RuleDefinition>(Methods.RulesSave,
+            new RuleDefinition(Guid.Empty, PredefinedFilters.Internet, RuleKind.Priority, RuleDirection.Both, Priority: PriorityLevel.Low));
+
+        var device = await Eventually(() => Task.FromResult(_devices.TryPeek(out var d) ? d : null), "limiter device");
+        Assert.Equal(PacketFilter.LimiterFilter, device.Filter);
+        var status = (await _client.RequestAsync<PacketFilterStatus>(Methods.FilterStatus))!;
+        Assert.NotNull(status.Limiter!.Priorities);
+        Assert.Equal(4, status.Limiter.Priorities!.Upload.Levels.Count);
+
+        s.IsPriorityEnabled = false;
+        await _client.RequestAsync<ServiceSettings>(Methods.SettingsUpdate, s);
+        await Eventually(() => Task.FromResult(device.Disposed ? (bool?)true : null), "limiter stop");
+    }
+
+    [Fact]
     public async Task Answering_unknown_request_returns_false()
     {
         Assert.False(await _client.RequestAsync<bool>(Methods.BlockerAnswer, new BlockerAnswer(Guid.NewGuid(), true)));

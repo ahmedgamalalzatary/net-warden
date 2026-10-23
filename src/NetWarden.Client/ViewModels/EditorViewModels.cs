@@ -157,6 +157,7 @@ public sealed partial class RuleEditorViewModel : ObservableObject
         _action = original?.Action ?? FirewallAction.Deny;
         _ignoreLimit = original?.IgnoreLimit ?? true;
         _ignoreData = original?.IgnoreData ?? false;
+        _priority = original?.Priority ?? PriorityLevel.High;
         if (original is null && _kind == RuleKind.Firewall)
             _direction = RuleDirection.Both;
     }
@@ -167,12 +168,13 @@ public sealed partial class RuleEditorViewModel : ObservableObject
     public IReadOnlyList<RuleKind> Kinds { get; } = Enum.GetValues<RuleKind>();
     public IReadOnlyList<RuleDirection> Directions { get; } = Enum.GetValues<RuleDirection>();
     public IReadOnlyList<FirewallAction> Actions { get; } = Enum.GetValues<FirewallAction>();
+    public IReadOnlyList<PriorityLevel> PriorityLevels { get; } = QuickPriority.Levels;
 
     [ObservableProperty]
     private FilterDefinition? _filter;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsLimit), nameof(IsFirewall), nameof(IsIgnore))]
+    [NotifyPropertyChangedFor(nameof(IsLimit), nameof(IsFirewall), nameof(IsIgnore), nameof(IsPriority))]
     private RuleKind _kind;
 
     [ObservableProperty]
@@ -201,11 +203,15 @@ public sealed partial class RuleEditorViewModel : ObservableObject
     private bool _ignoreData;
 
     [ObservableProperty]
+    private PriorityLevel _priority;
+
+    [ObservableProperty]
     private string? _error;
 
     public bool IsLimit => Kind == RuleKind.Limit;
     public bool IsFirewall => Kind == RuleKind.Firewall;
     public bool IsIgnore => Kind == RuleKind.Ignore;
+    public bool IsPriority => Kind == RuleKind.Priority;
 
     public RuleDefinition? Build()
     {
@@ -237,6 +243,7 @@ public sealed partial class RuleEditorViewModel : ObservableObject
             Action: IsFirewall ? Action : null,
             IgnoreLimit: IsIgnore && IgnoreLimit,
             IgnoreData: IsIgnore && IgnoreData,
-            ExpiresAt: _original?.ExpiresAt);
+            ExpiresAt: _original?.ExpiresAt,
+            Priority: IsPriority ? Priority : null);
     }
 }

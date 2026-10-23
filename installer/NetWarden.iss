@@ -44,7 +44,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#Stage}\client\NetWarden.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#Stage}\service\*"; DestDir: "{app}\service"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#Stage}\service\*"; DestDir: "{app}\service"; Excludes: "WinDivert.dll,WinDivert64.sys"; Flags: ignoreversion recursesubdirs createallsubdirs
+; The driver keeps WinDivert64.sys open while it is loaded. Without ignoreversion an
+; identical version is skipped instead of replaced (the driver is also stopped first).
+Source: "{#Stage}\service\WinDivert.dll"; DestDir: "{app}\service"
+Source: "{#Stage}\service\WinDivert64.sys"; DestDir: "{app}\service"
 Source: "..\third_party\WinDivert\LICENSE"; DestDir: "{app}\licenses"; DestName: "WinDivert-LICENSE.txt"
 
 [Icons]
@@ -121,7 +125,12 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
-    RemoveExistingService()
+  begin
+    RemoveExistingService();
+    { Unload WinDivert so its files can be replaced; fails harmlessly if another program uses it. }
+    if Sc('stop WinDivert') = 0 then
+      Sleep(1000);
+  end
   else if CurStep = ssPostInstall then
     InstallService();
 end;

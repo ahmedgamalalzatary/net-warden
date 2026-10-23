@@ -149,6 +149,96 @@ public class InstalledServiceTests
         }
     }
 
+    [InstalledServiceFact]
+    public async Task Installed_service_gives_critical_traffic_priority_over_normal()
+    {
+        string curl = Path.Combine(Environment.SystemDirectory, "curl.exe");
+        if (!File.Exists(curl))
+            return;
+        string dir = Path.Combine(Path.GetTempPath(), "netwarden-e2e-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        // Two copies are two apps: one gets Critical, the other stays Normal.
+        string critical = Path.Combine(dir, "nw-critical-curl.exe");
+        string normal = Path.Combine(dir, "nw-normal-curl.exe");
+        File.Copy(curl, critical);
+        File.Copy(curl, normal);
+
+        await using var client = new ServiceClient();
+        await client.ConnectAsync(TimeSpan.FromSeconds(5));
+        var original = (await client.RequestAsync<ServiceSettings>(Methods.SettingsGet))!;
+        var filter = (await client.RequestAsync<FilterDefinition>(Methods.FiltersSave, new FilterDefinition(Guid.Empty,
+            $"E2E priority {Guid.NewGuid():N}", FilterType.Filter, FilterPerType.None,
+            [new FilterFunction(FilterFunctionKind.PathContains, true, ["nw-critical-curl"])], [])))!;
+        try
+        {
+            if (await Download(normal, seconds: 4) is not { } alone || alone < 800 * 1024)
+                return; // the line is too slow to tell a 300 KB/s stream from the rest
+            // Tell the service the line speed (a little under what it just measured, at most 2000 KB/s).
+            long line = (long)Math.Min(2000 * 1024, alone * 0.8);
+
+            var settings = IpcJson.FromElement<ServiceSettings>(IpcJson.ToElement(original))!;
+            settings.IsPriorityEnabled = true;
+            settings.Priorities.MinDownloadBytesPerSecond = settings.Priorities.MaxDownloadBytesPerSecond = line;
+            await client.RequestAsync<ServiceSettings>(Methods.SettingsUpdate, settings);
+            await client.RequestAsync<RuleDefinition>(Methods.RulesSave, new RuleDefinition(Guid.Empty, filter.Id,
+                RuleKind.Priority, RuleDirection.Both, Priority: PriorityLevel.Critical));
+            for (int i = 0; i < 50 && (await client.RequestAsync<PacketFilterStatus>(Methods.FilterStatus))!.Limiter?.IsRunning != true; i++)
+                await Task.Delay(100);
+
+            // A steady 300 KB/s Critical stream, and a greedy Normal download next to it.
+            var stream = Download(critical, seconds: 9, limit: "300k");
+            await Task.Delay(1500);
+            double? squeezedOrNull = await Download(normal, seconds: 6);
+            double? streamedOrNull = await stream;
+
+            double? releasedOrNull = await Download(normal, seconds: 4);
+            if (squeezedOrNull is not { } squeezed || streamedOrNull is not { } streamed || releasedOrNull is not { } released)
+                return; // the speed test server stopped answering (rate limit)
+
+            // Critical reserves 70% of the line (more than the stream needs), so Normal gets the
+            // other 30%; curl's own --limit-rate runs a little over 300 KB/s.
+            double expected = line - Math.Max(0.7 * line, 1.2 * 300 * 1024);
+            string measured = $"alone {alone / 1024:0}, line {line / 1024}, expected {expected / 1024:0}, squeezed {squeezed / 1024:0}, " +
+                $"critical {streamed / 1024:0}, released {released / 1024:0} KB/s";
+            // Real lines vary from run to run: observed 0.94x - 1.42x of the expected share.
+            Assert.True(squeezed > expected * 0.5 && squeezed < expected * 1.6, measured);
+            Assert.True(streamed is > 250 * 1024 and < 380 * 1024, measured);
+            Assert.True(released > expected * 1.5, measured);
+        }
+        finally
+        {
+            await client.RequestAsync<bool>(Methods.FiltersDelete, new DeleteRequest(filter.Id));
+            await client.RequestAsync<ServiceSettings>(Methods.SettingsUpdate, original);
+            try { Directory.Delete(dir, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>Downloads with a copy of curl for <paramref name="seconds"/>; returns curl's average bytes/s, or null if the server refused.</summary>
+    private static async Task<double?> Download(string curl, int seconds, string? limit = null)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo(curl)
+        {
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (string arg in new[] { "-s", "-o", "NUL", "--max-time", seconds.ToString(), "-w", "%{speed_download} %{http_code}" })
+            start.ArgumentList.Add(arg);
+        if (limit is not null)
+        {
+            start.ArgumentList.Add("--limit-rate");
+            start.ArgumentList.Add(limit);
+        }
+        // Hetzner's public test file: Cloudflare's speed test answers 429 to repeated large downloads.
+        start.ArgumentList.Add("https://fsn1-speed.hetzner.com/100MB.bin");
+        using var process = System.Diagnostics.Process.Start(start)!;
+        string output = await process.StandardOutput.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        // curl reports 0 B/s when the server refuses (e.g. 429 after many runs); that says nothing about NetWarden.
+        string[] parts = output.Trim().Split(' ');
+        return parts is [var speed, "200"] ? double.Parse(speed, System.Globalization.CultureInfo.InvariantCulture) : null;
+    }
+
     private static async Task<PacketFilterStatus> WaitForStatus(ServiceClient client, bool running)
     {
         PacketFilterStatus status = null!;

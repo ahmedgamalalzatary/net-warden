@@ -23,7 +23,7 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
-                <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
             </Grid.RowDefinitions>
 
             <TextBlock Text="For filter" Style="{StaticResource Label}" />
@@ -50,12 +50,17 @@
                 <CheckBox Content="Ignore data (not counted in stats)" IsChecked="{Binding IgnoreData}" />
             </StackPanel>
 
-            <TextBlock Grid.Row="6" Text="Weight" Style="{StaticResource Label}"
-                       ToolTip="0 = default: whole computer 1, zones 2, other filters 3. Higher weight wins." />
-            <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding Weight, UpdateSourceTrigger=PropertyChanged}" Margin="0,4" Padding="4,3" />
+            <TextBlock Grid.Row="6" Text="Priority" Style="{StaticResource Label}" Visibility="{Binding IsPriority, Converter={StaticResource BoolToVis}}"
+                       ToolTip="While a higher priority has traffic, lower priorities get only what it leaves over." />
+            <ComboBox Grid.Row="6" Grid.Column="1" ItemsSource="{Binding PriorityLevels}" SelectedItem="{Binding Priority}" Margin="0,4"
+                      Visibility="{Binding IsPriority, Converter={StaticResource BoolToVis}}" />
 
-            <TextBlock Grid.Row="7" Text="Notes" Style="{StaticResource Label}" />
-            <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding Notes, UpdateSourceTrigger=PropertyChanged}" Margin="0,4" Padding="4,3" />
+            <TextBlock Grid.Row="7" Text="Weight" Style="{StaticResource Label}"
+                       ToolTip="0 = default: whole computer 1, zones 2, other filters 3. Higher weight wins." />
+            <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding Weight, UpdateSourceTrigger=PropertyChanged}" Margin="0,4" Padding="4,3" />
+
+            <TextBlock Grid.Row="8" Text="Notes" Style="{StaticResource Label}" />
+            <TextBox Grid.Row="8" Grid.Column="1" Text="{Binding Notes, UpdateSourceTrigger=PropertyChanged}" Margin="0,4" Padding="4,3" />
         </Grid>
         <CheckBox Content="Enabled" IsChecked="{Binding IsEnabled}" Margin="0,8,0,0" />
         <TextBlock Text="{Binding Error}" Foreground="{DynamicResource BadBrush}" Margin="0,10,0,0" TextWrapping="Wrap" />

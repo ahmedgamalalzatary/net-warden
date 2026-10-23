@@ -29,6 +29,7 @@ NetWarden.Service (LocalSystem)
         |       inputs: ZoneClassifier, DnsMap (ETW DNS-Client), ProcessUsers (token SID)
         |-- PacketFilterService -> PacketFilter (WinDivert, priority 100) -> Blocker (verdicts, Ask)
         |                       -> PacketFilter (WinDivert, priority 0)   -> Limiter (token buckets)
+        |                                                                   + PriorityScheduler (per direction)
         |                                                                   + LimiterPump (sends due packets)
         '-- SettingsService  %ProgramData%\NetWarden\settings.json (+ .bak)
 ```
@@ -70,7 +71,7 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 | `rules.save` / `rules.delete` | `RuleDefinition` / `DeleteRequest` | saved rule / `true` |
 | `rules.setEnabled` / `rules.reorder` | `SetRuleEnabledRequest` / `ReorderRulesRequest` | `true` |
 | `rules.evaluate` | `EvaluateRequest` | `FlowDecision` |
-| `packetfilter.status` | - | `PacketFilterStatus` (blocker counters + `Limiter`: delayed, dropped, queued bytes) |
+| `packetfilter.status` | - | `PacketFilterStatus` (blocker counters + `Limiter`: delayed, dropped, queued bytes, `Priorities`) |
 | `blocker.pending` | - | `BlockerRequest[]` |
 | `blocker.answer` | `BlockerAnswer` | `true` if the request was still pending |
 
@@ -90,6 +91,8 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
   script checks ISCC.exe's Authenticode signature before running it.
 - The installer (admin, x64, Windows 10+) installs to Program Files, replaces any existing `NetWarden`
   service (including one from `install-service.ps1`) and registers it: auto start, restart on failure.
+- Upgrades stop the old service and the WinDivert driver first (the loaded driver locks WinDivert64.sys);
+  the WinDivert files are installed without `ignoreversion`, so an identical version is skipped.
 - Uninstall stops and deletes the service and stops the WinDivert driver; `%ProgramData%\NetWarden`
   (rules, settings) is kept.
 - Size is ~85 MB because both programs carry the .NET runtime; nothing needs to be installed first.
@@ -124,6 +127,28 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 - Ignore rules: "ignore limit" is applied by the rule engine; "ignore data" is exposed on
   `FlowDecision.IgnoreData` for statistics and quotas (phases 6 and 7) to skip that traffic.
 
+## Priority notes
+- Rule kind `Priority` with a level (Low / Normal / High / Critical) per direction; the first matching
+  rule by (weight desc, list order) wins. Flows no priority rule matches are Normal.
+- The limiter's filter also runs while Priorities are on and a priority rule exists. The Limiter switch
+  only turns limits off; the Priorities switch only turns priorities off.
+- `PriorityScheduler` (one per direction) measures each level's rate every reaction interval
+  (Low 1 s, Normal 250 ms, Fast 100 ms, Custom 50-5000 ms) and estimates the line capacity.
+- Allocation from the top: the highest active level is never restricted. Every level below gets
+  `capacity - sum of reservations of the active levels above it` (at least 3% of the line / 4 KB/s);
+  a level's reservation is `max(its % of the line, its rate + headroom %)`. Low has no reservation.
+- Active: at least 2 KB/s in the last interval, held for 4 reaction intervals (min 500 ms). Without
+  adaptive allocation a level stays active for 30 s after its last packet, even when idle.
+- Capacity: the highest total rate seen, clamped to the min/max settings (min = max fixes it). It only
+  decays (half-life 10 min) while nothing is restricted, because restricted traffic understates the line.
+  Measuring starts when the limiter's filter opens (i.e. once a priority rule exists).
+- Restricted levels draw from a token bucket like a limit, so they queue and drop the same way.
+- Measured live (line set to 2000 KB/s): Normal download alone ~3.5 MB/s; next to a 300 KB/s Critical
+  stream 565-568 KB/s (expected 600); back to 2.3-2.9 MB/s after the stream ended. Across runs the
+  squeezed rate was 0.94x-1.42x of the expected share; the stream kept 300-320 KB/s.
+- The priority E2E test downloads ~30 MB at full line speed from Hetzner's public test file (Cloudflare's
+  speed test answers 429 to repeated large downloads; the test returns early on a refused download).
+
 ## Rules semantics
 - Filter = AND of functions; a function matches if any of its values matches; "is not" negates.
 - Composite = (any base filter matches) AND its own functions; base filters can't be composite.
@@ -157,6 +182,8 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
   theme brushes (Foreground, BorderBrush) or text turns black on dark.
 - DataGrid squeezes fixed columns to fit a star column; give them `MinWidth` so it scrolls instead.
 - Visual check: `NETWARDEN_SHOTS=<folder> dotnet test --filter ThemeTests` writes each dialog in both themes as PNG.
+- Priority cell: a "quick priority" is one permanent Both-direction Priority rule on the app's filter;
+  choosing Normal deletes it.
 - Two-way bindings inside DataGrid cells need an explicit `UpdateSourceTrigger=PropertyChanged`,
   otherwise the row BindingGroup defers them forever (read-only grids never commit).
 

@@ -48,4 +48,12 @@ public sealed record PacketFilterStatus(bool IsRunning, bool IsNeeded, string? E
 
 /// <summary>The limiter's own packet filter: <see cref="PacketsDelayed"/> waited for their limit, <see cref="PacketsDropped"/> overflowed it.</summary>
 public sealed record LimiterStatus(bool IsRunning, bool IsNeeded, string? Error, long PacketsSeen, long PacketsDelayed, long PacketsDropped,
-    long QueuedBytes);
+    long QueuedBytes, PriorityStatus? Priorities = null);
+
+/// <summary>What the priority scheduler sees and allows, per direction.</summary>
+public sealed record PriorityStatus(bool IsActive, PriorityDirectionStatus Download, PriorityDirectionStatus Upload);
+
+/// <summary>Estimated line capacity and, per level (Low first), its rate and cap (null = not restricted).</summary>
+public sealed record PriorityDirectionStatus(long CapacityBytesPerSecond, IReadOnlyList<PriorityLevelStatus> Levels);
+
+public sealed record PriorityLevelStatus(PriorityLevel Level, long BytesPerSecond, bool IsActive, long? CapBytesPerSecond);

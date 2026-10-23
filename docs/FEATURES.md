@@ -43,8 +43,8 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 4b.1 Dark theme for the whole client (main window, grids, dialogs, chart), Light / Dark / Follow Windows setting
 
 ## Phase 5 - Priorities
-- [ ] 5.1 Priority rules: Low / Normal / High / Critical
-- [ ] 5.2 Bandwidth reservation %, adaptive allocation, reaction speed, min/max bandwidth
+- [x] 5.1 Priority rules: Low / Normal / High / Critical (rule editor, Priority column in Activity)
+- [x] 5.2 Bandwidth reservation %, adaptive allocation, reaction speed, min/max bandwidth (Priorities tab with live status)
 
 ## Phase 6 - Statistics
 - [ ] 6.1 Stats database (SQLite), periodic save, save Internet/Local/Loopback toggles

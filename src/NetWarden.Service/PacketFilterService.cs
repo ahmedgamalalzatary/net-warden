@@ -15,7 +15,7 @@ public delegate IPacketDevice PacketDeviceFactory(string filter, short priority)
 /// <summary>
 /// Runs the WinDivert packet filters only while something needs them: the blocker's
 /// (blocker rules or a non-Allow default) and the limiter's (limit rules with the
-/// Limiter on). Answers Ask requests and resets established connections that newly
+/// Limiter on, or priority rules with Priorities on). Answers Ask requests and resets established connections that newly
 /// denied rules cover. Stopping a filter returns Windows to normal traffic.
 /// </summary>
 public sealed class PacketFilterService(
@@ -51,14 +51,14 @@ public sealed class PacketFilterService(
     private PacketFilterStatus StatusLocked() =>
         new(_blocker.IsRunning, _blocker.Needed, _blocker.Error, _blocker.Filter?.PacketsSeen ?? 0, blocker.Dropped,
             new LimiterStatus(_limiter.IsRunning, _limiter.Needed, _limiter.Error, _limiter.Filter?.PacketsSeen ?? 0,
-                limiter.Delayed, limiter.Dropped, limiter.QueuedBytes));
+                limiter.Delayed, limiter.Dropped, limiter.QueuedBytes, limiter.Priorities));
 
     /// <summary>Whether the current rules and settings require the blocker's filter.</summary>
     public static bool IsNeeded(ServiceSettings s, CompiledRuleSet r) =>
         s.IsBlockerEnabled && (r.HasFirewallRules || s.DefaultFirewallIn != FirewallAction.Allow || s.DefaultFirewallOut != FirewallAction.Allow);
 
-    /// <summary>Whether the current rules and settings require the limiter's filter.</summary>
-    public static bool IsLimiterNeeded(ServiceSettings s, CompiledRuleSet r) => s.IsLimiterEnabled && r.HasLimitRules;
+    /// <summary>Whether the current rules and settings require the limiter's filter (limits or priorities).</summary>
+    public static bool IsLimiterNeeded(ServiceSettings s, CompiledRuleSet r) => Limiter.UsesLimits(s, r) || Limiter.UsesPriorities(s, r);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

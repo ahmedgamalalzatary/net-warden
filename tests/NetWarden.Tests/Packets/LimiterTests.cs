@@ -14,6 +14,7 @@ public sealed class LimiterTests : IDisposable
     private readonly RuleRepository _rules;
     private readonly Dictionary<FlowId, int> _owners = [];
     private readonly Limiter _limiter;
+    private ServiceSettings _settings = new();
 
     private static readonly AppInfo Browser = new(@"c:\apps\browser.exe", AppKind.Desktop, @"c:\apps\browser.exe", "Browser", null, null, null, [], null);
     private static readonly AppInfo Game = new(@"c:\apps\game.exe", AppKind.Desktop, @"c:\apps\game.exe", "Game", null, null, null, [], null);
@@ -35,7 +36,7 @@ public sealed class LimiterTests : IDisposable
         _rules = new RuleRepository(new JsonFileStore<RulesDocument>(_dir.File("rules.json")), new ZoneClassifier([]), _time);
         var contexts = new FlowContextFactory(pid => pid switch { 100 => Browser, 200 => Game, _ => null }, _ => null, new DnsMap());
         _lookup = new Owners(_owners);
-        _limiter = new Limiter(() => _rules.Current, _lookup, contexts, _time);
+        _limiter = new Limiter(() => _rules.Current, () => _settings, _lookup, contexts, _time);
     }
 
     public void Dispose() => _dir.Dispose();
@@ -268,7 +269,7 @@ public sealed class LimiterTests : IDisposable
     [Fact]
     public void Pump_sends_due_packets_on_its_own()
     {
-        var limiter = new Limiter(() => _rules.Current, _lookup, new FlowContextFactory(_ => Browser, _ => null, new DnsMap()), TimeProvider.System);
+        var limiter = new Limiter(() => _rules.Current, () => _settings, _lookup, new FlowContextFactory(_ => Browser, _ => null, new DnsMap()), TimeProvider.System);
         Limit(10_000, RuleDirection.Out);
         var sent = new System.Collections.Concurrent.ConcurrentQueue<HeldPacket>();
         using (var pump = new LimiterPump(limiter, ps => { foreach (var p in ps) sent.Enqueue(p); }))
@@ -284,5 +285,120 @@ public sealed class LimiterTests : IDisposable
                 Thread.Sleep(5);
             Assert.Equal(3, sent.Count); // the first one passed straight through; three waited
         }
+    }
+
+    private RuleDefinition Priority(AppInfo app, PriorityLevel level, RuleDirection dir = RuleDirection.Both) =>
+        _rules.SaveRule(new RuleDefinition(Guid.Empty, _rules.EnsureAppFilter(app.Id, app.DisplayName).Id, RuleKind.Priority, dir, Priority: level));
+
+    /// <summary>
+    /// A greedy browser upload (3 MB/s offered) next to a steady game stream, for
+    /// <paramref name="seconds"/>; returns the bytes per second each one got through.
+    /// </summary>
+    private (double Browser, double Game, int GameDelayed) Compete(double seconds, long gameRate)
+    {
+        long browser = 0, game = 0;
+        int gameDelayed = 0;
+        double gameCredit = 0;
+        int ticks = (int)(seconds * 2000);
+        for (int tick = 0; tick < ticks; tick++)
+        {
+            if (Send(Up(1500, 50000), owner: 100) == PacketVerdict.Pass)
+                browser += 1500;
+            gameCredit += gameRate / 2000.0;
+            if (gameRate > 0 && gameCredit >= 500)
+            {
+                gameCredit -= 500;
+                if (Send(Up(500, 60000, remote: "8.8.8.8"), owner: 200) == PacketVerdict.Pass)
+                    game += 500;
+                else
+                    gameDelayed++;
+            }
+            _time.Advance(TimeSpan.FromMilliseconds(0.5));
+            foreach (var held in _limiter.TakeDue(out _))
+            {
+                if (held.Data.Length - 40 == 1500)
+                    browser += 1500;
+                else
+                    game += 500;
+            }
+        }
+        return (browser / seconds, game / seconds, gameDelayed);
+    }
+
+    [Fact]
+    public void Priorities_restrict_lower_levels_while_a_higher_one_is_active()
+    {
+        _settings.Priorities.MinUploadBytesPerSecond = _settings.Priorities.MaxUploadBytesPerSecond = 1_000_000;
+        Priority(Game, PriorityLevel.Critical);
+        Priority(Browser, PriorityLevel.Low);
+
+        Compete(1, gameRate: 100_000); // let the scheduler settle
+        var (browser, game, gameDelayed) = Compete(5, gameRate: 100_000);
+
+        // Critical reserves 70% of the 1 MB/s line; the Low browser gets the other 30%.
+        Assert.InRange(browser, 280_000, 320_000);
+        Assert.InRange(game, 95_000, 105_000);
+        Assert.Equal(0, gameDelayed);
+        Assert.True(_limiter.Priorities.IsActive);
+        var low = _limiter.Priorities.Upload.Levels[(int)PriorityLevel.Low];
+        Assert.NotNull(low.CapBytesPerSecond);
+    }
+
+    [Fact]
+    public void Lower_level_runs_free_when_the_higher_one_is_idle()
+    {
+        _settings.Priorities.MinUploadBytesPerSecond = _settings.Priorities.MaxUploadBytesPerSecond = 1_000_000;
+        Priority(Game, PriorityLevel.Critical);
+        Priority(Browser, PriorityLevel.Low);
+        Compete(1, gameRate: 100_000);
+
+        Compete(1.5, gameRate: 0); // released after the 1 s hold (Normal reaction speed)
+        var (browser, _, _) = Compete(2, gameRate: 0);
+
+        Assert.True(browser > 2_500_000, $"browser got {browser:0} B/s; {System.Text.Json.JsonSerializer.Serialize(_limiter.Priorities)}");
+        Assert.False(_limiter.Priorities.IsActive);
+    }
+
+    [Fact]
+    public void Priorities_switch_off_with_their_setting()
+    {
+        _settings.Priorities.MinUploadBytesPerSecond = _settings.Priorities.MaxUploadBytesPerSecond = 1_000_000;
+        _settings.IsPriorityEnabled = false;
+        Priority(Game, PriorityLevel.Critical);
+        Priority(Browser, PriorityLevel.Low);
+
+        Compete(1, gameRate: 100_000);
+        var (browser, _, _) = Compete(2, gameRate: 100_000);
+
+        Assert.True(browser > 2_500_000, $"browser got {browser:0} B/s");
+    }
+
+    [Fact]
+    public void Limiter_switch_turns_off_limits_but_not_priorities()
+    {
+        Limit(10_000, RuleDirection.Out);
+        _settings.IsLimiterEnabled = false;
+
+        for (int i = 0; i < 5; i++)
+            Assert.Equal(PacketVerdict.Pass, Send(Up(1500)));
+
+        _settings.IsLimiterEnabled = true;
+        _time.Advance(TimeSpan.FromSeconds(1));
+        Send(Up(1500));
+        Assert.Equal(PacketVerdict.Hold, Send(Up(1500)));
+    }
+
+    [Fact]
+    public void Priority_applies_per_direction()
+    {
+        _settings.Priorities.MinUploadBytesPerSecond = _settings.Priorities.MaxUploadBytesPerSecond = 1_000_000;
+        Priority(Game, PriorityLevel.Critical, RuleDirection.In); // download only
+        Priority(Browser, PriorityLevel.Low);
+
+        Compete(1, gameRate: 100_000);
+        var (browser, _, _) = Compete(3, gameRate: 100_000);
+
+        // On upload the game is Normal (the default), still above Low: the browser keeps 50%.
+        Assert.True(browser is > 450_000 and < 560_000, $"browser got {browser:0} B/s; {System.Text.Json.JsonSerializer.Serialize(_limiter.Priorities)}");
     }
 }

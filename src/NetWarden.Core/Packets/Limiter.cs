@@ -10,11 +10,12 @@ public interface IPacketProcessor
 }
 
 /// <summary>
-/// Shapes traffic to the limit rules. Each packet's payload (what the Activity view
-/// counts, so a limit means the same there) draws on the token buckets of every
-/// limit that applies to its flow; when a bucket is short the packet is queued until
-/// it can go (TCP then settles at the limit), and when a bucket's backlog is already
-/// longer than <see cref="MaxQueueDelay"/> the packet is dropped instead.
+/// Shapes traffic to the limit and priority rules. Each packet's payload (what the Activity
+/// view counts, so a limit means the same there) draws on the token buckets of every
+/// limit that applies to its flow, and on its priority level's bucket while the
+/// <see cref="PriorityScheduler"/> restricts that level; when a bucket is short the packet
+/// is queued until it can go (TCP then settles at the limit), and when a bucket's backlog
+/// is already longer than <see cref="MaxQueueDelay"/> the packet is dropped instead.
 /// Thread-safe: packets arrive on the filter thread, due packets leave on the pump thread.
 /// </summary>
 public sealed class Limiter : IPacketProcessor
@@ -22,12 +23,13 @@ public sealed class Limiter : IPacketProcessor
     public static readonly TimeSpan MaxQueueDelay = TimeSpan.FromMilliseconds(500);
     public static readonly TimeSpan FlowCacheLifetime = TimeSpan.FromMinutes(2);
     /// <summary>How long a flow without a known owner stays unlimited before it is looked up again.</summary>
-    public static readonly TimeSpan UnknownOwnerRetry = TimeSpan.FromSeconds(5);
+    public static readonly TimeSpan UnknownOwnerRetry = TimeSpan.FromSeconds(1);
     public const long MaxQueuedBytes = 64L * 1024 * 1024;
     /// <summary>Smallest burst a bucket allows, so one full-size packet always fits.</summary>
     public const long MinBurstBytes = 1514;
 
     private readonly Func<CompiledRuleSet> _rules;
+    private readonly Func<ServiceSettings> _settings;
     private readonly IFlowOwnerLookup _owners;
     private readonly FlowContextFactory _contexts;
     private readonly TimeProvider _time;
@@ -40,15 +42,24 @@ public sealed class Limiter : IPacketProcessor
     private long _delayed;
     private long _dropped;
     private long _lastPrune;
+    private PriorityScheduler _download;
+    private PriorityScheduler _upload;
 
-    public Limiter(Func<CompiledRuleSet> rules, IFlowOwnerLookup owners, FlowContextFactory contexts, TimeProvider time)
+    public Limiter(Func<CompiledRuleSet> rules, Func<ServiceSettings> settings, IFlowOwnerLookup owners, FlowContextFactory contexts, TimeProvider time)
     {
         _rules = rules;
+        _settings = settings;
         _owners = owners;
         _contexts = contexts;
         _time = time;
         _lastPrune = time.GetTimestamp();
+        _download = new PriorityScheduler(time);
+        _upload = new PriorityScheduler(time);
     }
+
+    /// <summary>Whether the settings and rules make the limiter enforce limits / priorities.</summary>
+    public static bool UsesLimits(ServiceSettings s, CompiledRuleSet r) => s.IsLimiterEnabled && r.HasLimitRules;
+    public static bool UsesPriorities(ServiceSettings s, CompiledRuleSet r) => s.IsPriorityEnabled && r.HasPriorityRules;
 
     /// <summary>Raised (outside the lock) when a queued packet became the earliest one, so the pump can wake up.</summary>
     public event Action? QueueHeadChanged;
@@ -61,6 +72,15 @@ public sealed class Limiter : IPacketProcessor
         get { lock (_lock) return _queuedBytes; }
     }
 
+    public PriorityStatus Priorities
+    {
+        get
+        {
+            lock (_lock)
+                return new PriorityStatus(_download.IsRestricting || _upload.IsRestricting, _download.Status(), _upload.Status());
+        }
+    }
+
     public PacketVerdict Process(in PacketInfo packet, ReadOnlySpan<byte> data, in WinDivertAddress address)
     {
         bool wake;
@@ -69,25 +89,47 @@ public sealed class Limiter : IPacketProcessor
             long now = _time.GetTimestamp();
             PruneIfDue(now);
             var state = Lookup(packet, now);
-            TokenBucket[] buckets = packet.Outbound ? state.Upload : state.Download;
-            if (buckets.Length == 0)
+            var settings = _settings();
+            var rules = _rules();
+            TokenBucket[] buckets = !UsesLimits(settings, rules) ? [] : packet.Outbound ? state.Upload : state.Download;
+            TokenBucket? priority = null;
+            if (UsesPriorities(settings, rules))
+            {
+                var p = settings.Priorities;
+                var (scheduler, level, min, max) = packet.Outbound
+                    ? (_upload, state.UploadLevel, p.MinUploadBytesPerSecond, p.MaxUploadBytesPerSecond)
+                    : (_download, state.DownloadLevel, p.MinDownloadBytesPerSecond, p.MaxDownloadBytesPerSecond);
+                scheduler.Record(level, packet.PayloadLength, now);
+                scheduler.UpdateIfDue(now, p, min, max);
+                priority = scheduler.Bucket(level);
+            }
+            if (buckets.Length == 0 && priority is null && state.Queued == 0)
                 return PacketVerdict.Pass;
 
             // Drop when any bucket is already backed up; otherwise draw from all of them
             // and send when the slowest one has caught up.
             long delay = 0;
+            long maxBacklog = MaxQueueDelay.Ticks * _time.TimestampFrequency / TimeSpan.TicksPerSecond;
+            bool overflow = _queuedBytes + data.Length > MaxQueuedBytes;
             foreach (var bucket in buckets)
             {
                 bucket.Refill(now, _time.TimestampFrequency);
-                if (bucket.Backlog(_time.TimestampFrequency) > MaxQueueDelay.Ticks * _time.TimestampFrequency / TimeSpan.TicksPerSecond
-                    || _queuedBytes + data.Length > MaxQueuedBytes)
-                {
-                    Interlocked.Increment(ref _dropped);
-                    return PacketVerdict.Drop;
-                }
+                overflow |= bucket.Backlog(_time.TimestampFrequency) > maxBacklog;
+            }
+            if (priority is not null)
+            {
+                priority.Refill(now, _time.TimestampFrequency);
+                overflow |= priority.Backlog(_time.TimestampFrequency) > maxBacklog;
+            }
+            if (overflow)
+            {
+                Interlocked.Increment(ref _dropped);
+                return PacketVerdict.Drop;
             }
             foreach (var bucket in buckets)
                 delay = Math.Max(delay, bucket.Take(packet.PayloadLength, _time.TimestampFrequency));
+            if (priority is not null)
+                delay = Math.Max(delay, priority.Take(packet.PayloadLength, _time.TimestampFrequency));
             if (delay == 0 && state.Queued == 0)
                 return PacketVerdict.Pass;
 
@@ -134,6 +176,8 @@ public sealed class Limiter : IPacketProcessor
             _queuedBytes = 0;
             _flows.Clear();
             _buckets.Clear();
+            _download = new PriorityScheduler(_time);
+            _upload = new PriorityScheduler(_time);
         }
         return all;
     }
@@ -161,6 +205,8 @@ public sealed class Limiter : IPacketProcessor
         var decision = _rules().Evaluate(flow, FirewallAction.Allow, FirewallAction.Allow, _time.GetUtcNow());
         state.Download = decision.DownloadLimits.Select(Bucket).ToArray();
         state.Upload = decision.UploadLimits.Select(Bucket).ToArray();
+        state.DownloadLevel = decision.DownloadPriority;
+        state.UploadLevel = decision.UploadPriority;
         return state;
     }
 
@@ -193,6 +239,8 @@ public sealed class Limiter : IPacketProcessor
         public int Queued;
         public TokenBucket[] Download = [];
         public TokenBucket[] Upload = [];
+        public PriorityLevel DownloadLevel = PriorityLevel.Normal;
+        public PriorityLevel UploadLevel = PriorityLevel.Normal;
     }
 }
 

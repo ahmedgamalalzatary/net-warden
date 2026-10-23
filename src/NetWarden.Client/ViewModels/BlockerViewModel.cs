@@ -77,8 +77,9 @@ public sealed partial class BlockerViewModel(IServiceRequester service, RulesVie
     {
         null => "",
         { Error: { } error } => "Limiter error: " + error,
-        { IsRunning: true } l => $"Limiting · {l.PacketsDelayed:N0} packets delayed · {l.PacketsDropped:N0} dropped",
-        { IsNeeded: false } => "Limiter idle: no active limits",
+        { IsRunning: true } l => $"Limiting · {l.PacketsDelayed:N0} packets delayed · {l.PacketsDropped:N0} dropped"
+            + (l.Priorities?.IsActive == true ? " · priorities restricting" : ""),
+        { IsNeeded: false } => "Limiter idle: no active limits or priorities",
         _ => "Limiter starting...",
     };
 

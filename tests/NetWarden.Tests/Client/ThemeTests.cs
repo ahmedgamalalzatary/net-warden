@@ -75,6 +75,7 @@ public sealed class ThemeTests(WpfHarness wpf)
                 [
                     new FilterEditorWindow(filterVm, _ => Task.FromResult<string?>(null)),
                     new RuleEditorWindow(new RuleEditorViewModel(null, PredefinedFilters.All, PredefinedFilters.Internet), _ => Task.FromResult<string?>(null)),
+                    new RuleEditorWindow(new RuleEditorViewModel(null, PredefinedFilters.All, PredefinedFilters.Internet, RuleKind.Priority), _ => Task.FromResult<string?>(null)),
                     new BlockerPromptWindow(new BlockerPromptViewModel(blocker)),
                 ];
                 foreach (var window in windows)
@@ -93,7 +94,7 @@ public sealed class ThemeTests(WpfHarness wpf)
         });
     }
 
-    private static void Save(Window window, string path)
+    internal static void Save(Window window, string path)
     {
         // The window's own visual: its client area at its real size (the title bar is drawn by Windows).
         var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);

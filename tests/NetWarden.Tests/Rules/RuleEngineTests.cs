@@ -297,6 +297,46 @@ public sealed class RuleRepositoryTests : IDisposable
         Assert.Equal(FirewallAction.Allow, Eval(Flows.Make(appId: "c:\\other.exe")).Firewall);
     }
 
+    private RuleDefinition Prioritize(Guid filter, PriorityLevel level, RuleDirection dir = RuleDirection.Both, int weight = 0) =>
+        _repo.SaveRule(new RuleDefinition(Guid.Empty, filter, RuleKind.Priority, dir, Weight: weight, Priority: level));
+
+    [Fact]
+    public void Flows_without_priority_rules_are_normal()
+    {
+        var decision = Eval(Flows.Make());
+
+        Assert.Equal(PriorityLevel.Normal, decision.DownloadPriority);
+        Assert.Equal(PriorityLevel.Normal, decision.UploadPriority);
+        Assert.False(_repo.Current.HasPriorityRules);
+    }
+
+    [Fact]
+    public void Priority_rules_apply_per_direction_and_weight_decides()
+    {
+        var browser = AppFilter();
+        Prioritize(browser.Id, PriorityLevel.High, RuleDirection.In);
+        Prioritize(PredefinedFilters.Internet, PriorityLevel.Low);
+
+        var decision = Eval(Flows.Make());
+
+        // The app filter (weight 3) beats the zone (weight 2) on download; only the zone covers upload.
+        Assert.Equal(PriorityLevel.High, decision.DownloadPriority);
+        Assert.Equal(PriorityLevel.Low, decision.UploadPriority);
+        Assert.True(_repo.Current.HasPriorityRules);
+
+        Prioritize(PredefinedFilters.Internet, PriorityLevel.Critical, weight: 10);
+        Assert.Equal(PriorityLevel.Critical, Eval(Flows.Make()).DownloadPriority);
+    }
+
+    [Fact]
+    public void Disabled_priority_rules_do_not_apply()
+    {
+        var rule = Prioritize(AppFilter().Id, PriorityLevel.Critical);
+        _repo.SetEnabled(rule.Id, false);
+
+        Assert.Equal(PriorityLevel.Normal, Eval(Flows.Make()).UploadPriority);
+    }
+
     [Fact]
     public void Deleting_a_filter_removes_its_rules_but_base_filters_in_use_are_protected()
     {
@@ -404,6 +444,7 @@ public class RuleValidatorTests
     [InlineData(RuleKind.Limit)]
     [InlineData(RuleKind.Firewall)]
     [InlineData(RuleKind.Ignore)]
+    [InlineData(RuleKind.Priority)]
     public void Rules_need_their_kind_specific_value(RuleKind kind)
     {
         var rule = new RuleDefinition(Guid.NewGuid(), PredefinedFilters.Internet, kind, RuleDirection.In);
@@ -419,5 +460,9 @@ public class RuleValidatorTests
             new RuleDefinition(Guid.NewGuid(), PredefinedFilters.Internet, RuleKind.Limit, RuleDirection.In, LimitBytesPerSecond: -1), Base));
         Assert.Throws<RuleValidationException>(() => RuleValidator.ValidateRule(
             new RuleDefinition(Guid.NewGuid(), PredefinedFilters.Internet, RuleKind.Firewall, RuleDirection.In, Action: FirewallAction.Deny, Weight: -1), Base));
+        Assert.Throws<RuleValidationException>(() => RuleValidator.ValidateRule(
+            new RuleDefinition(Guid.NewGuid(), PredefinedFilters.Internet, RuleKind.Priority, RuleDirection.In, Priority: (PriorityLevel)42), Base));
+        RuleValidator.ValidateRule(
+            new RuleDefinition(Guid.NewGuid(), PredefinedFilters.Internet, RuleKind.Priority, RuleDirection.In, Priority: PriorityLevel.High), Base);
     }
 }

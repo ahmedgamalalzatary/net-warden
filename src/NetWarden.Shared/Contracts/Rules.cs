@@ -70,6 +70,16 @@ public enum RuleKind
     Limit,
     Firewall,
     Ignore,
+    Priority,
+}
+
+/// <summary>Priority of a flow's traffic; flows no priority rule matches are Normal.</summary>
+public enum PriorityLevel
+{
+    Low,
+    Normal,
+    High,
+    Critical,
 }
 
 public enum FirewallAction
@@ -89,7 +99,8 @@ public enum RuleState
 /// <summary>
 /// A rule attached to a filter. Kind-specific fields: <see cref="LimitBytesPerSecond"/>
 /// for limits, <see cref="Action"/> for the blocker, <see cref="IgnoreLimit"/> /
-/// <see cref="IgnoreData"/> for ignore rules. Weight 0 means "default for the filter".
+/// <see cref="IgnoreData"/> for ignore rules, <see cref="Priority"/> for priority rules.
+/// Weight 0 means "default for the filter".
 /// </summary>
 public sealed record RuleDefinition(
     Guid Id,
@@ -105,7 +116,8 @@ public sealed record RuleDefinition(
     bool IgnoreData = false,
     DateTimeOffset? ExpiresAt = null,
     DateTimeOffset Created = default,
-    DateTimeOffset Updated = default);
+    DateTimeOffset Updated = default,
+    PriorityLevel? Priority = null);
 
 /// <summary>The persisted rule configuration. Rule list order breaks weight ties.</summary>
 public sealed class RulesDocument
@@ -149,4 +161,6 @@ public sealed record FlowDecision(
     IReadOnlyList<LimitBinding> DownloadLimits,
     IReadOnlyList<LimitBinding> UploadLimits,
     bool IgnoreData,
-    IReadOnlyList<Guid> MatchedFilterIds);
+    IReadOnlyList<Guid> MatchedFilterIds,
+    PriorityLevel DownloadPriority = PriorityLevel.Normal,
+    PriorityLevel UploadPriority = PriorityLevel.Normal);

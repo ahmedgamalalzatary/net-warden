@@ -45,16 +45,23 @@ public sealed partial class MainViewModel : ObservableObject
         Info = new InfoViewModel(connection, ports);
         Rules = new RulesViewModel(connection);
         Blocker = new BlockerViewModel(connection, Rules);
+        Priorities = new PrioritiesViewModel(() => SettingsFromService, UpdateSettingsAsync);
         Activity.Updated += () =>
         {
             OnPropertyChanged(nameof(ChartHistory));
             Info.Refresh();
             RefreshRuleStates();
-            // Packet counters change constantly; refresh them every few snapshots.
-            if (++_ticks % 3 == 0 && IsConnected)
+            // Packet counters change constantly; refresh them every few snapshots
+            // (every snapshot while the Priorities tab shows live rates).
+            if ((++_ticks % 3 == 0 || IsPrioritiesTabVisible) && IsConnected)
                 _ = Blocker.LoadAsync();
         };
         Rules.Reloaded += RefreshRuleStates;
+        Blocker.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(BlockerViewModel.Status))
+                ShowPriorityStatus();
+        };
 
         _connection.StateChanged += state => _dispatcher.InvokeAsync(() => HandleStateChanged(state));
         _connection.EventReceived += OnServiceEvent;
@@ -64,6 +71,12 @@ public sealed partial class MainViewModel : ObservableObject
     public InfoViewModel Info { get; }
     public RulesViewModel Rules { get; }
     public BlockerViewModel Blocker { get; }
+    public PrioritiesViewModel Priorities { get; }
+
+    /// <summary>Set by the window while the Priorities tab is selected.</summary>
+    public bool IsPrioritiesTabVisible { get; set; }
+
+    public IReadOnlyList<PriorityLevel> PriorityLevels => QuickPriority.Levels;
 
     public IReadOnlyList<FirewallAction> FirewallActions { get; } = Enum.GetValues<FirewallAction>();
 
@@ -129,6 +142,30 @@ public sealed partial class MainViewModel : ObservableObject
     public Task<bool> SetAppLimitAsync(ActivityRow row, RuleDirection direction, double kilobytes) =>
         ChangeAppLimitAsync(row, true, (existing, filter) => QuickLimit.SetValue(existing, filter, direction, kilobytes), direction);
 
+    /// <summary>Gives an app a priority (Normal removes its quick priority rule).</summary>
+    public async Task<bool> SetAppPriorityAsync(ActivityRow row, PriorityLevel level)
+    {
+        if (row.App?.App is not { } app)
+            return false;
+        Guid? filter = QuickBlock.AppFilterId(Rules.Snapshot, app.Id);
+        if (filter is null && level != PriorityLevel.Normal)
+            filter = (await Rules.EnsureAppFilterAsync(app))?.Id;
+        bool ok = filter is not null || level == PriorityLevel.Normal;
+        if (filter is { } id)
+        {
+            var (save, delete) = QuickPriority.Plan(QuickPriority.Find(Rules.Snapshot, id), id, level);
+            if (save is not null)
+                ok = await Rules.SaveRuleAsync(save);
+            if (delete is { } ruleId && Rules.Rules.FirstOrDefault(r => r.Rule.Id == ruleId) is { } item)
+                ok = await Rules.DeleteRuleAsync(item);
+        }
+        RefreshRuleStates();
+        return ok;
+    }
+
+    private void ShowPriorityStatus() =>
+        Priorities.ShowStatus(Blocker.Status?.Limiter, Rules.Snapshot?.Rules.Any(r => r.Rule.Kind == RuleKind.Priority && r.Rule.IsEnabled) == true);
+
     private async Task<bool> ChangeAppLimitAsync(ActivityRow row, bool createFilter,
         Func<RuleDefinition?, Guid, RuleDefinition?> plan, RuleDirection direction)
     {
@@ -161,7 +198,9 @@ public sealed partial class MainViewModel : ObservableObject
             row.IsLimitedOut = QuickLimit.IsLimited(limitOut);
             row.LimitInText = QuickLimit.Format(QuickLimit.Kilobytes(limitIn));
             row.LimitOutText = QuickLimit.Format(QuickLimit.Kilobytes(limitOut));
+            row.Priority = QuickPriority.Level(QuickPriority.Find(snapshot, filter));
         }
+        ShowPriorityStatus();
         foreach (string name in new[] { nameof(BlockInternetIn), nameof(BlockInternetOut), nameof(BlockLocalIn), nameof(BlockLocalOut) })
             OnPropertyChanged(name);
     }
@@ -189,6 +228,7 @@ public sealed partial class MainViewModel : ObservableObject
         foreach (string name in new[] { nameof(IsLimiterEnabled), nameof(IsBlockerEnabled), nameof(IsPriorityEnabled),
                      nameof(DefaultFirewallIn), nameof(DefaultFirewallOut) })
             OnPropertyChanged(name);
+        Priorities.RefreshSettings();
     }
 
     public bool IsConnected => ConnectionState == ConnectionState.Connected;

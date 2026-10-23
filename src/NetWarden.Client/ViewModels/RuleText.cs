@@ -69,6 +69,7 @@ public static class RuleText
             (false, true) => "Ignore data",
             _ => "?",
         },
+        RuleKind.Priority => rule.Priority?.ToString() ?? "?",
         _ => "",
     };
 

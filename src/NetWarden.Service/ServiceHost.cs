@@ -99,6 +99,7 @@ public static class ServiceHost
             sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton(sp => new Limiter(
             () => sp.GetRequiredService<RuleRepository>().Current,
+            () => sp.GetRequiredService<SettingsService>().Current,
             sp.GetRequiredService<IFlowOwnerLookup>(),
             sp.GetRequiredService<FlowContextFactory>(),
             sp.GetRequiredService<TimeProvider>()));

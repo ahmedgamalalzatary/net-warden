@@ -38,8 +38,10 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
         var dispatcher = new IpcDispatcher()
             .Register(Methods.ServiceInfo, _ => Task.FromResult(new ServiceInfo("0.1.0", 1, DateTimeOffset.UtcNow, true, false, "test")))
             .Register(Methods.SettingsGet, _ => Task.FromResult(new ServiceSettings()))
+            .Register<ServiceSettings, ServiceSettings>(Methods.SettingsUpdate, (s, _) => Task.FromResult(s!))
             .Register(Methods.ActivityGet, _ => Task.FromResult(Snapshot()))
-            .Register(Methods.FilterStatus, _ => Task.FromResult(new PacketFilterStatus(true, true, null, 10, 2)))
+            .Register(Methods.FilterStatus, _ => Task.FromResult(new PacketFilterStatus(true, true, null, 10, 2,
+                new LimiterStatus(true, true, null, 100, 5, 1, 0, Priorities()))))
             .Register(Methods.BlockerPending, _ => Task.FromResult(new List<BlockerRequest>
             {
                 new(Guid.NewGuid(), Browser, 100, TransportProtocol.Tcp, ConnectionKind.Connect, "192.168.1.14", 50000,
@@ -73,6 +75,18 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
         wpf.Run(() => _window.Close());
         await _connection.DisposeAsync();
         await _server.DisposeAsync();
+    }
+
+    private static PriorityStatus Priorities()
+    {
+        static PriorityDirectionStatus Direction(long capacity, long lowRate, long? lowCap, long criticalRate) => new(capacity,
+        [
+            new(PriorityLevel.Low, lowRate, lowRate > 0, lowCap),
+            new(PriorityLevel.Normal, 0, false, lowCap),
+            new(PriorityLevel.High, 0, false, lowCap),
+            new(PriorityLevel.Critical, criticalRate, criticalRate > 0, null),
+        ]);
+        return new PriorityStatus(true, Direction(2_000_000, 500_000, 600_000, 80_000), Direction(500_000, 0, null, 0));
     }
 
     private DataGrid Grid => _window.ActivityGrid;
@@ -199,6 +213,83 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
         var rule = Assert.Single(_savedRules);
         Assert.Equal((BrowserFilter.Id, RuleKind.Limit, RuleDirection.In, 250 * 1024L, true),
             (rule.FilterId, rule.Kind, rule.Direction, rule.LimitBytesPerSecond!.Value, rule.IsEnabled));
+    }
+
+    [Fact]
+    public async Task Choosing_a_priority_in_the_grid_saves_a_priority_rule()
+    {
+        await wpf.RunAsync(async () =>
+        {
+            await WpfHarness.Settle();
+            var row = WpfHarness.Descendants<DataGridRow>(Grid).Single(r => ((ActivityRow)r.Item).Name == "Browser");
+            var combo = WpfHarness.Descendants<ComboBox>(row).Single();
+            Assert.Equal(PriorityLevel.Normal, combo.SelectedItem);
+            combo.SelectedItem = PriorityLevel.High;
+            for (int i = 0; i < 50 && _savedRules.Count == 0; i++)
+                await WpfHarness.Settle(30);
+        });
+
+        var rule = Assert.Single(_savedRules);
+        Assert.Equal((BrowserFilter.Id, RuleKind.Priority, RuleDirection.Both, PriorityLevel.High),
+            (rule.FilterId, rule.Kind, rule.Direction, rule.Priority!.Value));
+    }
+
+    [Theory]
+    [InlineData(AppTheme.Light)]
+    [InlineData(AppTheme.Dark)]
+    public async Task Priorities_tab_shows_levels_and_live_status(AppTheme theme)
+    {
+        string? shots = Environment.GetEnvironmentVariable("NETWARDEN_SHOTS");
+        var (rows, critical, low, capacity) = await wpf.RunAsync(async () =>
+        {
+            wpf.Themes.Apply(theme);
+            try
+            {
+                SelectTab("Priorities");
+                for (int i = 0; i < 50 && _vm.Priorities.CapacityText == ""; i++)
+                    await WpfHarness.Settle(30);
+                await WpfHarness.Settle();
+                if (shots is not null)
+                {
+                    _window.Width = 1360; // the app's default size
+                    await WpfHarness.Settle();
+                    ThemeTests.Save(_window, Path.Combine(shots, $"Priorities-{theme}.png"));
+                    SelectTab("Activity");
+                    await WpfHarness.Settle();
+                    ThemeTests.Save(_window, Path.Combine(shots, $"Activity-{theme}.png"));
+                }
+                var levels = _vm.Priorities.Levels;
+                return (WpfHarness.Descendants<DataGridRow>(_window.PriorityLevelsGrid).Count(), levels[0], levels[3], _vm.Priorities.CapacityText);
+            }
+            finally
+            {
+                wpf.Themes.Apply(AppTheme.Light);
+            }
+        });
+
+        Assert.Equal(4, rows);
+        Assert.Equal((PriorityLevel.Critical, "70 %", true), (critical.Level, critical.Reserved, critical.IsActive));
+        Assert.Equal("", critical.DownloadCap);
+        Assert.Equal(PriorityLevel.Low, low.Level);
+        Assert.NotEqual("", low.DownloadCap);
+        Assert.Contains("down", capacity);
+    }
+
+    [Fact]
+    public async Task Priority_settings_are_written_to_the_service()
+    {
+        ServiceSettings? saved = null;
+        await wpf.RunAsync(async () =>
+        {
+            _vm.Priorities.CriticalPercent = 80;
+            for (int i = 0; i < 50 && _vm.SettingsFromService?.Priorities.CriticalPercent != 80; i++)
+                await WpfHarness.Settle(30);
+            saved = _vm.SettingsFromService;
+            _vm.Priorities.MaxDownload = "abc";
+        });
+
+        Assert.Equal(80, saved!.Priorities.CriticalPercent);
+        Assert.NotNull(_vm.Priorities.InputError);
     }
 
     [Fact]

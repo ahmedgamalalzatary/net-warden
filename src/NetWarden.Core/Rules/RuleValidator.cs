@@ -92,6 +92,10 @@ public static class RuleValidator
                 if (!rule.IgnoreLimit && !rule.IgnoreData)
                     throw new RuleValidationException("An ignore rule must ignore the limit, the data, or both.");
                 break;
+            case RuleKind.Priority:
+                if (rule.Priority is not { } level || !Enum.IsDefined(level))
+                    throw new RuleValidationException("A priority rule needs a priority level.");
+                break;
         }
         if (rule.Weight < 0)
             throw new RuleValidationException("Weight can't be negative.");

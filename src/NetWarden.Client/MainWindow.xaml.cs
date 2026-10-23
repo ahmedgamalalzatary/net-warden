@@ -23,6 +23,12 @@ public partial class MainWindow : Window
             vm.PropertyChanged += OnViewModelPropertyChanged;
             UpdateInfoPaneWidth();
         };
+        // Combo boxes and grids inside the tabs raise SelectionChanged too; only the tab control's own counts.
+        Tabs.SelectionChanged += (_, e) =>
+        {
+            if (e.OriginalSource == Tabs && ViewModel is { } vm)
+                vm.IsPrioritiesTabVisible = Tabs.SelectedItem == PrioritiesTab;
+        };
     }
 
     private MainViewModel? ViewModel => DataContext as MainViewModel;
@@ -311,6 +317,27 @@ public partial class MainWindow : Window
         box.Text = LimitText(row, direction);
         if (vm.Rules.LastError is { } error)
             ShowError(error);
+    }
+
+    private async void QuickPriority_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ComboBox { DataContext: ActivityRow row, SelectedItem: PriorityLevel level } box || ViewModel is not { } vm
+            || level == row.Priority)
+            return;
+        await vm.SetAppPriorityAsync(row, level);
+        box.SelectedItem = row.Priority;
+        if (vm.Rules.LastError is { } error)
+            ShowError(error);
+    }
+
+    /// <summary>Enter commits a settings text box (the binding saves on lost focus).</summary>
+    private void SettingBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && sender is TextBox box)
+        {
+            box.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+            e.Handled = true;
+        }
     }
 
     private async void PendingAllow_Click(object sender, RoutedEventArgs e) => await AnswerPending(sender, true);

@@ -58,6 +58,10 @@ public sealed partial class ActivityRow : ObservableObject
     [ObservableProperty]
     private bool _isLimitedIn;
 
+    /// <summary>The app's quick priority (Normal when it has none).</summary>
+    [ObservableProperty]
+    private PriorityLevel _priority = PriorityLevel.Normal;
+
     [ObservableProperty]
     private bool _isLimitedOut;
 

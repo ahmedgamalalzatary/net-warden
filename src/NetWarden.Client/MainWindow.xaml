@@ -277,6 +277,16 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="Priority" Width="96" MinWidth="96" CanUserSort="True" SortMemberPath="Priority">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate DataType="{x:Type vm:ActivityRow}">
+                                <ComboBox ItemsSource="{Binding Data.PriorityLevels, Source={StaticResource Proxy}}"
+                                          SelectedItem="{Binding Priority, Mode=OneWay}" SelectionChanged="QuickPriority_Changed"
+                                          Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}" Padding="6,1" MinHeight="0"
+                                          VerticalAlignment="Center" ToolTip="Priority of this app's traffic. Normal is the default." />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTextColumn Header="DL Rate" Width="88" MinWidth="88" SortMemberPath="RateIn" Binding="{Binding RateInText}"
                                         ElementStyle="{StaticResource NumberCell}"
                                         Visibility="{Binding Data.ShowRateIn, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
@@ -386,6 +396,132 @@
                     </DataGrid.Columns>
                 </DataGrid>
             </DockPanel>
+        </TabItem>
+
+        <!-- Priorities -->
+        <TabItem x:Name="PrioritiesTab" Header="Priorities" Padding="14,4">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="8" DataContext="{Binding Priorities}" MaxWidth="900" HorizontalAlignment="Left">
+                    <Border Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14,10" Margin="0,0,0,10"
+                            IsEnabled="{Binding DataContext.IsConnected, RelativeSource={RelativeSource AncestorType=Window}}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <CheckBox Content="Priorities enabled" FontWeight="SemiBold" VerticalAlignment="Center"
+                                          IsChecked="{Binding DataContext.IsPriorityEnabled, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                <TextBlock Text="Reaction speed:" Margin="28,0,6,0" VerticalAlignment="Center" />
+                                <ComboBox Width="96" ItemsSource="{Binding ReactionSpeeds}" SelectedItem="{Binding ReactionSpeed}"
+                                          ToolTip="How quickly lower priorities are restricted when a higher one starts, and released when it stops. Low = 1 s, Normal = 250 ms, Fast = 100 ms." />
+                                <TextBox Width="60" Margin="8,0,4,0" VerticalAlignment="Center" Text="{Binding ReactionMillis}"
+                                         Visibility="{Binding IsCustomReaction, Converter={StaticResource BoolToVis}}" />
+                                <TextBlock Text="ms" VerticalAlignment="Center" Visibility="{Binding IsCustomReaction, Converter={StaticResource BoolToVis}}" />
+                            </StackPanel>
+                            <CheckBox Content="Adaptive allocation: reserve bandwidth for a priority only while it has traffic" Margin="0,10,0,0"
+                                      IsChecked="{Binding Adaptive}"
+                                      ToolTip="Off: a priority keeps its reservation while it has open connections, even idle ones (steadier for some games, but wastes bandwidth)." />
+                            <TextBlock Text="{Binding StateText}" Margin="0,10,0,0" Foreground="{DynamicResource MutedText}" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding InputError}" Foreground="{DynamicResource BadBrush}" />
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="Now" FontWeight="SemiBold" Margin="2,0,0,6" />
+                    <DataGrid x:Name="PriorityLevelsGrid" ItemsSource="{Binding Levels}" AutoGenerateColumns="False" IsReadOnly="True"
+                              HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="26" SelectionMode="Single"
+                              Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
+                              CanUserSortColumns="False" HorizontalAlignment="Left">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                                <Setter Property="Foreground" Value="{DynamicResource DimText}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Priority" Binding="{Binding Level}" Width="100" />
+                            <DataGridTextColumn Header="Reserved" Binding="{Binding Reserved}" Width="90" />
+                            <DataGridTextColumn Header="DL rate" Binding="{Binding DownloadRate}" Width="110" />
+                            <DataGridTextColumn Header="DL allowed" Binding="{Binding DownloadCap}" Width="110" />
+                            <DataGridTextColumn Header="UL rate" Binding="{Binding UploadRate}" Width="110" />
+                            <DataGridTextColumn Header="UL allowed" Binding="{Binding UploadCap}" Width="110" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <TextBlock Margin="2,8,0,14" Foreground="{DynamicResource MutedText}" TextWrapping="Wrap"
+                               Text="Give apps a priority in the Activity tab (Priority column), or add Priority rules for any filter in the Rules tab. Empty 'allowed' means not restricted." />
+                    <TextBlock Text="Bandwidth reservation" FontWeight="SemiBold" Margin="2,0,0,6" />
+                    <Border Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14,10" Margin="0,0,0,10"
+                            IsEnabled="{Binding DataContext.IsConnected, RelativeSource={RelativeSource AncestorType=Window}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="56" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                            </Grid.RowDefinitions>
+                            <Grid.Resources>
+                                <Style TargetType="Slider" BasedOn="{StaticResource {x:Type Slider}}">
+                                    <Setter Property="Minimum" Value="0" />
+                                    <Setter Property="Maximum" Value="95" />
+                                    <Setter Property="TickFrequency" Value="5" />
+                                    <Setter Property="IsSnapToTickEnabled" Value="True" />
+                                    <Setter Property="VerticalAlignment" Value="Center" />
+                                    <Setter Property="Margin" Value="0,4" />
+                                </Style>
+                            </Grid.Resources>
+                            <TextBlock Text="Critical" VerticalAlignment="Center" Margin="0,0,16,0"
+                                       ToolTip="Share of the line kept for Critical traffic (VoIP, games) while it is active" />
+                            <Slider Grid.Column="1" Value="{Binding CriticalPercent, Delay=400}" />
+                            <TextBlock Grid.Column="2" Text="{Binding CriticalPercent, StringFormat={}{0} %}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+
+                            <TextBlock Grid.Row="1" Text="High" VerticalAlignment="Center" Margin="0,0,16,0"
+                                       ToolTip="Share of the line kept for High traffic (e.g. a browser) while it is active" />
+                            <Slider Grid.Row="1" Grid.Column="1" Value="{Binding HighPercent, Delay=400}" />
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding HighPercent, StringFormat={}{0} %}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+
+                            <TextBlock Grid.Row="2" Text="Normal" VerticalAlignment="Center" Margin="0,0,16,0"
+                                       ToolTip="Share of the line kept for Normal traffic (every app without a priority) while it is active; Low traffic gets the rest" />
+                            <Slider Grid.Row="2" Grid.Column="1" Value="{Binding NormalPercent, Delay=400}" />
+                            <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding NormalPercent, StringFormat={}{0} %}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+
+                            <TextBlock Grid.Row="3" Text="Headroom" VerticalAlignment="Center" Margin="0,0,16,0"
+                                       ToolTip="Extra room over a priority's current speed, so it can speed up before lower priorities yield" />
+                            <Slider Grid.Row="3" Grid.Column="1" Value="{Binding HeadroomPercent, Delay=400}" Maximum="100" />
+                            <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding HeadroomPercent, StringFormat={}{0} %}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+
+                            <TextBlock Grid.Row="4" Grid.ColumnSpan="3" Margin="0,8,0,0" Foreground="{DynamicResource MutedText}" TextWrapping="Wrap"
+                                       Text="The highest priority with traffic always gets what it needs. Each lower priority gets the line minus the reservations of the active priorities above it." />
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Text="Line speed (KB/s, empty = detect automatically)" FontWeight="SemiBold" Margin="2,0,0,6" />
+                    <Border Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14,10" Margin="0,0,0,10"
+                            IsEnabled="{Binding DataContext.IsConnected, RelativeSource={RelativeSource AncestorType=Window}}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Download min" VerticalAlignment="Center" Width="96" />
+                                <TextBox x:Name="MinDownloadBox" Width="90" Text="{Binding MinDownload}" KeyDown="SettingBox_KeyDown" />
+                                <TextBlock Text="max" VerticalAlignment="Center" Margin="16,0,8,0" />
+                                <TextBox Width="90" Text="{Binding MaxDownload}" KeyDown="SettingBox_KeyDown" />
+                                <TextBlock Text="Upload min" VerticalAlignment="Center" Margin="32,0,0,0" Width="80" />
+                                <TextBox Width="90" Text="{Binding MinUpload}" KeyDown="SettingBox_KeyDown" />
+                                <TextBlock Text="max" VerticalAlignment="Center" Margin="16,0,8,0" />
+                                <TextBox Width="90" Text="{Binding MaxUpload}" KeyDown="SettingBox_KeyDown" />
+                            </StackPanel>
+                            <TextBlock Margin="0,8,0,0" Foreground="{DynamicResource MutedText}" TextWrapping="Wrap"
+                                       Text="NetWarden learns the line speed from the fastest traffic it sees. Setting max to your real line speed makes priorities react before the line is full." />
+                            <TextBlock Text="{Binding CapacityText}" Margin="0,6,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
         </TabItem>
 
         <!-- Filters -->

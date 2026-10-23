@@ -36,6 +36,7 @@ public sealed class CompiledRuleSet
     private readonly CompiledRule[] _firewall;
     private readonly CompiledRule[] _limits;
     private readonly CompiledRule[] _ignores;
+    private readonly CompiledRule[] _priorities;
 
     internal CompiledRuleSet(long generation, Dictionary<Guid, CompiledFilter> filters, IReadOnlyList<CompiledRule> rules)
     {
@@ -46,6 +47,7 @@ public sealed class CompiledRuleSet
         _firewall = ordered.Where(r => r.Rule.Kind == RuleKind.Firewall).ToArray();
         _limits = ordered.Where(r => r.Rule.Kind == RuleKind.Limit).ToArray();
         _ignores = ordered.Where(r => r.Rule.Kind == RuleKind.Ignore).ToArray();
+        _priorities = ordered.Where(r => r.Rule.Kind == RuleKind.Priority && r.Rule.Priority is not null).ToArray();
     }
 
     public long Generation { get; }
@@ -54,6 +56,7 @@ public sealed class CompiledRuleSet
 
     public bool HasFirewallRules => _firewall.Length > 0;
     public bool HasLimitRules => _limits.Length > 0;
+    public bool HasPriorityRules => _priorities.Length > 0;
 
     /// <summary>
     /// Decides a flow. <paramref name="defaultIn"/>/<paramref name="defaultOut"/> apply when no
@@ -114,8 +117,23 @@ public sealed class CompiledRuleSet
                 upload.Add(new LimitBinding(rule.Rule.Id, rule.Rule.LimitBytesPerSecond.Value, bucket + "|out"));
         }
 
+        // Priority: the first matching rule per direction (weight desc, list order); Normal otherwise.
+        PriorityLevel? priorityIn = null, priorityOut = null;
+        foreach (var rule in _priorities)
+        {
+            if (priorityIn is not null && priorityOut is not null)
+                break;
+            if (!rule.IsLive(now) || !Matches(rule.Rule.FilterId))
+                continue;
+            if (priorityIn is null && Applies(rule.Rule.Direction, RuleDirection.In))
+                priorityIn = rule.Rule.Priority;
+            if (priorityOut is null && Applies(rule.Rule.Direction, RuleDirection.Out))
+                priorityOut = rule.Rule.Priority;
+        }
+
         return new FlowDecision(action, firewallRule, download, upload, ignoreData,
-            matched.Where(kv => kv.Value).Select(kv => kv.Key).ToList());
+            matched.Where(kv => kv.Value).Select(kv => kv.Key).ToList(),
+            priorityIn ?? PriorityLevel.Normal, priorityOut ?? PriorityLevel.Normal);
     }
 
     private string BucketKey(CompiledRule rule, FlowContext flow)
