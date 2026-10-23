@@ -20,6 +20,7 @@ public sealed class ServiceHostTests : IAsyncLifetime
             ["NetWarden:PipeName"] = _pipeName,
             ["NetWarden:RestrictPipeToAdmins"] = "false",
             ["NetWarden:SettingsPath"] = _dir.File("settings.json"),
+            ["NetWarden:EnableTrafficSource"] = "false",
         });
         await _host.StartAsync();
         _client = new ServiceClient(_pipeName);
@@ -69,6 +70,78 @@ public sealed class ServiceHostTests : IAsyncLifetime
     public async Task Apps_resolve_returns_null_for_dead_pid()
     {
         Assert.Null(await _client.RequestAsync<AppInfo>(Methods.AppsResolve, new ResolveAppRequest(int.MaxValue - 2)));
+    }
+
+    [Fact]
+    public async Task Activity_snapshot_lists_this_process_and_its_sockets()
+    {
+        using var pair = await Monitoring.LoopbackPair.CreateAsync();
+
+        var snapshot = await _client.RequestAsync<ActivitySnapshot>(Methods.ActivityGet);
+        // activity.get may return the startup snapshot; wait for a tick that sees the new sockets.
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!HasListener(snapshot, pair.ListenPort) && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(200);
+            snapshot = await _client.RequestAsync<ActivitySnapshot>(Methods.ActivityGet);
+        }
+
+        Assert.True(HasListener(snapshot, pair.ListenPort), "Own listening socket not in snapshot.");
+        var me = snapshot!.Apps.Single(a => a.ProcessIds.Contains(Environment.ProcessId));
+        Assert.True(me.IsOnline);
+        Assert.Contains(me.Connections, c => c.Kind == ConnectionKind.Connect && c.RemotePort == pair.ListenPort);
+        Assert.Contains(me.Connections, c => c.Kind == ConnectionKind.Accept && c.LocalPort == pair.ListenPort);
+    }
+
+    private static bool HasListener(ActivitySnapshot? snapshot, int port) =>
+        snapshot?.Apps.Any(a => a.Connections.Any(c => c.Kind == ConnectionKind.Listen && c.LocalPort == port)) == true;
+
+    [Fact]
+    public async Task Snapshot_events_are_pushed_to_clients()
+    {
+        var received = new TaskCompletionSource<ActivitySnapshot?>();
+        _client.EventReceived += (method, payload) =>
+        {
+            if (method == Events.ActivitySnapshot)
+                received.TrySetResult(IpcJson.FromElement<ActivitySnapshot>(payload));
+        };
+
+        var snapshot = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.NotNull(snapshot);
+        Assert.NotEmpty(snapshot.Apps);
+    }
+
+    [Fact]
+    public async Task Reset_totals_succeeds()
+    {
+        Assert.True(await _client.RequestAsync<bool>(Methods.ActivityResetTotals));
+    }
+
+    [Monitoring.AdminFact]
+    public async Task Kill_connection_resets_a_tcp_connection()
+    {
+        using var pair = await Monitoring.LoopbackPair.CreateAsync();
+
+        bool ok = await _client.RequestAsync<bool>(Methods.ConnectionsKill, new KillConnectionRequest(
+            TransportProtocol.Tcp, "127.0.0.1", pair.ClientPort, "127.0.0.1", pair.ListenPort));
+
+        Assert.True(ok);
+    }
+
+    [Fact]
+    public async Task Kill_udp_is_rejected_with_a_clear_error()
+    {
+        var ex = await Assert.ThrowsAsync<IpcRemoteException>(() => _client.RequestAsync<bool>(Methods.ConnectionsKill,
+            new KillConnectionRequest(TransportProtocol.Udp, "127.0.0.1", 1, "127.0.0.1", 2)));
+        Assert.Contains("Only TCP", ex.RemoteMessage);
+    }
+
+    [Fact]
+    public async Task Reverse_dns_rejects_invalid_address()
+    {
+        await Assert.ThrowsAsync<IpcRemoteException>(() =>
+            _client.RequestAsync<string>(Methods.DnsReverse, new ReverseDnsRequest("not-an-ip")));
     }
 
     [Fact]
