@@ -1,0 +1,19 @@
+<!-- Colors of the dark theme. Same keys as Light.xaml; lighter accents keep contrast on dark panels. -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="WindowBackground" Color="#1C1C1E" />
+    <SolidColorBrush x:Key="PanelBackground" Color="#262628" />
+    <SolidColorBrush x:Key="AltRowBackground" Color="#2C2C2F" />
+    <SolidColorBrush x:Key="BorderBrush" Color="#3A3A3D" />
+    <SolidColorBrush x:Key="TextBrush" Color="#E6E6E8" />
+    <SolidColorBrush x:Key="MutedText" Color="#A1A1AA" />
+    <SolidColorBrush x:Key="DimText" Color="#71717A" />
+    <SolidColorBrush x:Key="SelectionBackground" Color="#1E3A5F" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#60A5FA" />
+    <SolidColorBrush x:Key="OkBrush" Color="#4ADE80" />
+    <SolidColorBrush x:Key="WarnBrush" Color="#FBBF24" />
+    <SolidColorBrush x:Key="BadBrush" Color="#F87171" />
+    <SolidColorBrush x:Key="ChartInBrush" Color="#60A5FA" />
+    <SolidColorBrush x:Key="ChartOutBrush" Color="#FB923C" />
+    <SolidColorBrush x:Key="ChartGridBrush" Color="#38383B" />
+</ResourceDictionary>

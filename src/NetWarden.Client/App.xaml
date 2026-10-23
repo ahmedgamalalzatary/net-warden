@@ -4,24 +4,22 @@
              xmlns:local="clr-namespace:NetWarden.Client"
              ShutdownMode="OnMainWindowClose">
     <Application.Resources>
+        <ResourceDictionary>
+        <!-- Our colors; ThemeManager swaps this for Themes/Dark.xaml and turns on Fluent's matching mode. -->
+        <ResourceDictionary.MergedDictionaries>
+            <ResourceDictionary Source="pack://application:,,,/NetWarden.Client;component/Themes/Light.xaml" />
+        </ResourceDictionary.MergedDictionaries>
         <local:MatchToIndexConverter x:Key="MatchToIndex" />
         <local:EnumToBoolConverter x:Key="EnumToBool" />
-        <SolidColorBrush x:Key="WindowBackground" Color="#F5F6F8" />
-        <SolidColorBrush x:Key="PanelBackground" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="BorderBrush" Color="#DDE1E6" />
-        <SolidColorBrush x:Key="MutedText" Color="#5F6B7A" />
-        <SolidColorBrush x:Key="AccentBrush" Color="#2563EB" />
-        <SolidColorBrush x:Key="OkBrush" Color="#16A34A" />
-        <SolidColorBrush x:Key="WarnBrush" Color="#D97706" />
-        <SolidColorBrush x:Key="BadBrush" Color="#DC2626" />
 
         <Style x:Key="FeatureChip" TargetType="Border">
             <Setter Property="Padding" Value="10,4" />
             <Setter Property="Margin" Value="0,0,8,0" />
             <Setter Property="CornerRadius" Value="12" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
-            <Setter Property="Background" Value="{StaticResource PanelBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource PanelBackground}" />
         </Style>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

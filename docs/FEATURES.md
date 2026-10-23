@@ -40,7 +40,7 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 4.3 Ignore rules (ignore limit / ignore data accounting)
 
 ## Phase 4b - Dark mode
-- [ ] 4b.1 Dark theme for the whole client (main window, grids, dialogs, chart), Light / Dark / Follow Windows setting
+- [x] 4b.1 Dark theme for the whole client (main window, grids, dialogs, chart), Light / Dark / Follow Windows setting
 
 ## Phase 5 - Priorities
 - [ ] 5.1 Priority rules: Low / Normal / High / Critical

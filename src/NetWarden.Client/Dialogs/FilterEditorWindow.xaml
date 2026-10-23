@@ -8,10 +8,10 @@
         d:DataContext="{d:DesignInstance Type=vm:FilterEditorViewModel}"
         Title="{Binding Title}" Width="720" Height="560" MinWidth="560" MinHeight="420"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
-        Background="{StaticResource WindowBackground}" FontFamily="Segoe UI" FontSize="13">
+        Background="{DynamicResource WindowBackground}" FontFamily="Segoe UI" FontSize="13">
     <DockPanel Margin="16">
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <TextBlock Text="{Binding Error}" Foreground="{StaticResource BadBrush}" VerticalAlignment="Center"
+            <TextBlock Text="{Binding Error}" Foreground="{DynamicResource BadBrush}" VerticalAlignment="Center"
                        Margin="0,0,16,0" TextWrapping="Wrap" MaxWidth="420" />
             <Button Content="Save" Width="90" Padding="0,4" IsDefault="True" Click="Save_Click" />
             <Button Content="Cancel" Width="90" Padding="0,4" Margin="8,0,0,0" IsCancel="True" />
@@ -89,7 +89,7 @@
                                     <TextBox Text="{Binding ValuesText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True"
                                              MinHeight="24" MaxHeight="90" VerticalScrollBarVisibility="Auto" Padding="3,2"
                                              IsEnabled="{Binding TakesValues}" />
-                                    <TextBlock Text="{Binding Hint}" Foreground="{StaticResource MutedText}" FontSize="11" Margin="2,2,0,0" />
+                                    <TextBlock Text="{Binding Hint}" Foreground="{DynamicResource MutedText}" FontSize="11" Margin="2,2,0,0" />
                                 </StackPanel>
                             </Grid>
                         </DataTemplate>

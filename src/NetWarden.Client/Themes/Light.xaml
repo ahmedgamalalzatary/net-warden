@@ -1,0 +1,19 @@
+<!-- Colors of the light theme. Dark.xaml defines the same keys; use them with DynamicResource. -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="WindowBackground" Color="#F5F6F8" />
+    <SolidColorBrush x:Key="PanelBackground" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="AltRowBackground" Color="#FAFBFC" />
+    <SolidColorBrush x:Key="BorderBrush" Color="#DDE1E6" />
+    <SolidColorBrush x:Key="TextBrush" Color="#1F2328" />
+    <SolidColorBrush x:Key="MutedText" Color="#5F6B7A" />
+    <SolidColorBrush x:Key="DimText" Color="#9AA3AF" />
+    <SolidColorBrush x:Key="SelectionBackground" Color="#DBEAFE" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#2563EB" />
+    <SolidColorBrush x:Key="OkBrush" Color="#16A34A" />
+    <SolidColorBrush x:Key="WarnBrush" Color="#D97706" />
+    <SolidColorBrush x:Key="BadBrush" Color="#DC2626" />
+    <SolidColorBrush x:Key="ChartInBrush" Color="#2563EB" />
+    <SolidColorBrush x:Key="ChartOutBrush" Color="#EA580C" />
+    <SolidColorBrush x:Key="ChartGridBrush" Color="#E5E7EB" />
+</ResourceDictionary>

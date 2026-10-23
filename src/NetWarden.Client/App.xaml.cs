@@ -36,8 +36,12 @@ public partial class App : Application
             }
         }
 
+        var themes = new ThemeManager(this);
+        themes.Apply(settings.Theme);
+
         _connection = new ServiceConnection();
         var viewModel = new MainViewModel(_connection, Dispatcher, settings, Save, new IconCache(), PortNames.LoadSystem());
+        viewModel.ThemeChanged += themes.Apply;
         MainWindow = new MainWindow { DataContext = viewModel };
         MainWindow.Show();
         _connection.Start();

@@ -27,4 +27,5 @@ public sealed class ClientSettings
     public int ChartWindowSeconds { get; set; } = 60;
     public bool ShowInfoPane { get; set; } = true;
     public bool ShowChart { get; set; } = true;
+    public NetWarden.Client.Services.AppTheme Theme { get; set; } = NetWarden.Client.Services.AppTheme.System;
 }

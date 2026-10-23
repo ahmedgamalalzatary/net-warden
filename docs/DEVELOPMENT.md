@@ -129,6 +129,17 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 - Client preferences: `%LocalAppData%\NetWarden\client.json`; unhandled UI errors: `client.log` next to it.
 - DL/UL Limit cells: a "quick limit" is one permanent Limit rule on the app's filter per direction.
   The checkbox enables/disables it (keeping the value); typing a value + Enter sets it and turns it on.
+- Themes: View > Theme (Follow Windows / Light / Dark), saved in client.json. `ThemeManager` sets WPF's
+  Fluent `Application.ThemeMode` (styles standard controls and the title bar) and swaps
+  `Themes/Light.xaml` / `Themes/Dark.xaml` (our brushes; same keys in both). Views must use
+  `{DynamicResource Key}` for these brushes, never StaticResource or hard-coded colors.
+- Fluent is sized for touch; `ThemeManager.CompactStyles` tightens CheckBox/TextBox/ComboBox/Button and
+  the DataGrid header/cell styles (selection colors come from the theme). They are built in code because
+  they must be based on Fluent's styles, which only exist once ThemeMode is set.
+- Styles without `BasedOn` (e.g. `LimitBox`) fall back to the classic look and must set their own
+  theme brushes (Foreground, BorderBrush) or text turns black on dark.
+- DataGrid squeezes fixed columns to fit a star column; give them `MinWidth` so it scrolls instead.
+- Visual check: `NETWARDEN_SHOTS=<folder> dotnet test --filter ThemeTests` writes each dialog in both themes as PNG.
 - Two-way bindings inside DataGrid cells need an explicit `UpdateSourceTrigger=PropertyChanged`,
   otherwise the row BindingGroup defers them forever (read-only grids never commit).
 

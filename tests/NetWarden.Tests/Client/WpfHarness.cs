@@ -19,6 +19,9 @@ public sealed class WpfHarness : IDisposable
         {
             var app = new NetWarden.Client.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             app.InitializeComponent();
+            // The real look (Fluent + our colors), as App.OnStartup applies it.
+            Themes = new NetWarden.Client.Services.ThemeManager(app);
+            Themes.Apply(NetWarden.Client.Services.AppTheme.Light);
             _ready.SetResult(Dispatcher.CurrentDispatcher);
             Dispatcher.Run();
         });
@@ -28,6 +31,8 @@ public sealed class WpfHarness : IDisposable
     }
 
     public Dispatcher Dispatcher => _ready.Task.Result;
+
+    public NetWarden.Client.Services.ThemeManager Themes { get; private set; } = null!;
 
     public Task<T> RunAsync<T>(Func<Task<T>> action) => Dispatcher.InvokeAsync(action).Task.Unwrap();
 

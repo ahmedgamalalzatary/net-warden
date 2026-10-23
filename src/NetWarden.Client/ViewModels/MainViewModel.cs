@@ -209,6 +209,23 @@ public sealed partial class MainViewModel : ObservableObject
         set { _settings.ShowInfoPane = value; _saveSettings(); OnPropertyChanged(); }
     }
 
+    /// <summary>Light, dark or follow Windows; applied by the app's <see cref="ThemeManager"/>.</summary>
+    public AppTheme Theme
+    {
+        get => _settings.Theme;
+        set
+        {
+            if (_settings.Theme == value)
+                return;
+            _settings.Theme = value;
+            _saveSettings();
+            ThemeChanged?.Invoke(value);
+            OnPropertyChanged();
+        }
+    }
+
+    public event Action<AppTheme>? ThemeChanged;
+
     public bool ShowChart
     {
         get => _settings.ShowChart;

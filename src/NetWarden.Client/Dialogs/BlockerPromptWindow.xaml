@@ -9,17 +9,17 @@
         d:DataContext="{d:DesignInstance Type=vm:BlockerPromptViewModel}"
         Title="NetWarden Blocker" Width="500" SizeToContent="Height" ResizeMode="NoResize"
         Topmost="True" ShowInTaskbar="True" WindowStartupLocation="CenterScreen"
-        Background="{StaticResource WindowBackground}" FontFamily="Segoe UI" FontSize="13">
+        Background="{DynamicResource WindowBackground}" FontFamily="Segoe UI" FontSize="13">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </Window.Resources>
     <StackPanel Margin="18">
         <TextBlock Text="{Binding Headline}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
         <TextBlock Text="{Binding Target}" FontSize="18" Margin="0,6,0,0" TextWrapping="Wrap" />
-        <TextBlock Text="{Binding Details}" Foreground="{StaticResource MutedText}" Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12" />
+        <TextBlock Text="{Binding Details}" Foreground="{DynamicResource MutedText}" Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12" />
 
-        <Border Margin="0,14,0,0" Padding="12,10" Background="{StaticResource PanelBackground}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6">
+        <Border Margin="0,14,0,0" Padding="12,10" Background="{DynamicResource PanelBackground}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6">
             <StackPanel>
                 <RadioButton Content="Only this time" GroupName="Remember"
                              IsChecked="{Binding Remember, Converter={StaticResource EnumToBool}, ConverterParameter={x:Static c:RememberMode.Once}}" />
@@ -40,15 +40,15 @@
             </StackPanel>
         </Border>
 
-        <TextBlock Text="{Binding Error}" Foreground="{StaticResource BadBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Error}" Foreground="{DynamicResource BadBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
         <DockPanel Margin="0,12,0,0">
-            <TextBlock Text="{Binding MoreText}" Foreground="{StaticResource MutedText}" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding MoreText}" Foreground="{DynamicResource MutedText}" VerticalAlignment="Center" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="Allow" Width="100" Padding="0,5" Command="{Binding AllowCommand}" IsDefault="True" />
                 <Button Content="Deny" Width="100" Padding="0,5" Margin="8,0,0,0" Command="{Binding DenyCommand}" />
             </StackPanel>
         </DockPanel>
-        <TextBlock Margin="0,10,0,0" FontSize="11" Foreground="{StaticResource MutedText}" TextWrapping="Wrap"
+        <TextBlock Margin="0,10,0,0" FontSize="11" Foreground="{DynamicResource MutedText}" TextWrapping="Wrap"
                    Text="Unanswered requests are denied after a minute. You can also answer them in the Blocker tab." />
     </StackPanel>
 </Window>

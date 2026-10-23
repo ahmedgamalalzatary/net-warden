@@ -6,11 +6,12 @@
         xmlns:local="clr-namespace:NetWarden.Client"
         xmlns:vm="clr-namespace:NetWarden.Client.ViewModels"
         xmlns:charts="clr-namespace:NetWarden.Client.Charts"
+        xmlns:svc="clr-namespace:NetWarden.Client.Services"
         xmlns:ipc="clr-namespace:NetWarden.Shared.Ipc;assembly=NetWarden.Shared"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
-        Title="NetWarden" Width="1180" Height="760" MinWidth="720" MinHeight="460"
-        Background="{StaticResource WindowBackground}"
+        Title="NetWarden" Width="1360" Height="800" MinWidth="720" MinHeight="460"
+        Background="{DynamicResource WindowBackground}"
         FontFamily="Segoe UI" FontSize="13">
     <Window.Resources>
         <local:BindingProxy x:Key="Proxy" Data="{Binding}" />
@@ -30,11 +31,14 @@
             <Setter Property="HorizontalContentAlignment" Value="Right" />
             <Setter Property="BorderThickness" Value="0,0,0,1" />
             <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
         </Style>
         <Style x:Key="ToolbarLabel" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,0,6,0" />
-            <Setter Property="Foreground" Value="{StaticResource MutedText}" />
+            <Setter Property="Foreground" Value="{DynamicResource MutedText}" />
         </Style>
 
         <ContextMenu x:Key="RowMenu" Opened="RowMenu_Opened">
@@ -51,8 +55,8 @@
 
     <DockPanel>
         <!-- Header: product name and global feature switches (wired up in later phases) -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource PanelBackground}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+        <Border DockPanel.Dock="Top" Background="{DynamicResource PanelBackground}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
             <DockPanel>
                 <TextBlock Text="NetWarden" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" IsEnabled="{Binding IsConnected}">
@@ -70,28 +74,28 @@
         </Border>
 
         <!-- Status bar -->
-        <Border DockPanel.Dock="Bottom" Background="{StaticResource PanelBackground}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,6">
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource PanelBackground}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,6">
             <DockPanel>
                 <Ellipse Width="9" Height="9" Margin="0,0,8,0" VerticalAlignment="Center">
                     <Ellipse.Style>
                         <Style TargetType="Ellipse">
-                            <Setter Property="Fill" Value="{StaticResource BadBrush}" />
+                            <Setter Property="Fill" Value="{DynamicResource BadBrush}" />
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding ConnectionState}" Value="{x:Static ipc:ConnectionState.Connected}">
-                                    <Setter Property="Fill" Value="{StaticResource OkBrush}" />
+                                    <Setter Property="Fill" Value="{DynamicResource OkBrush}" />
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding ConnectionState}" Value="{x:Static ipc:ConnectionState.Connecting}">
-                                    <Setter Property="Fill" Value="{StaticResource WarnBrush}" />
+                                    <Setter Property="Fill" Value="{DynamicResource WarnBrush}" />
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Ellipse.Style>
                 </Ellipse>
                 <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding Activity.LastError}" Foreground="{StaticResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding Blocker.LimiterStatusText}" Foreground="{StaticResource MutedText}" Margin="16,0,0,0" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding ServiceSummary}" Foreground="{StaticResource MutedText}"
+                <TextBlock Text="{Binding Activity.LastError}" Foreground="{DynamicResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding Blocker.LimiterStatusText}" Foreground="{DynamicResource MutedText}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding ServiceSummary}" Foreground="{DynamicResource MutedText}"
                            HorizontalAlignment="Right" VerticalAlignment="Center" />
             </DockPanel>
         </Border>
@@ -104,7 +108,7 @@
             <DockPanel LastChildFill="False">
                 <TextBlock Text="Show" Style="{StaticResource ToolbarLabel}" />
                 <ComboBox Width="90" ItemsSource="{Binding Activity.Filters}" SelectedItem="{Binding Activity.Filter}" />
-                <TextBox Width="220" Margin="12,0,0,0" VerticalContentAlignment="Center" Padding="4,2"
+                <TextBox Width="220" Margin="12,0,0,0" VerticalAlignment="Center" VerticalContentAlignment="Center"
                          Text="{Binding Activity.Search, UpdateSourceTrigger=PropertyChanged}"
                          ToolTip="Search apps, paths and addresses" />
                 <TextBlock Text="Units" Style="{StaticResource ToolbarLabel}" Margin="16,0,6,0" />
@@ -119,34 +123,45 @@
                     <MenuItem Header="View ▾" Padding="6,3">
                         <MenuItem Header="Info pane" IsCheckable="True" IsChecked="{Binding ShowInfoPane}" />
                         <MenuItem Header="Traffic chart" IsCheckable="True" IsChecked="{Binding ShowChart}" />
+                        <Separator />
+                        <MenuItem Header="Theme">
+                            <MenuItem Header="Follow Windows" IsCheckable="True"
+                                      IsChecked="{Binding Theme, Converter={StaticResource EnumToBool}, ConverterParameter={x:Static svc:AppTheme.System}}" />
+                            <MenuItem Header="Light" IsCheckable="True"
+                                      IsChecked="{Binding Theme, Converter={StaticResource EnumToBool}, ConverterParameter={x:Static svc:AppTheme.Light}}" />
+                            <MenuItem Header="Dark" IsCheckable="True"
+                                      IsChecked="{Binding Theme, Converter={StaticResource EnumToBool}, ConverterParameter={x:Static svc:AppTheme.Dark}}" />
+                        </MenuItem>
                     </MenuItem>
                 </Menu>
                 <Button DockPanel.Dock="Right" Content="Reset totals" Padding="10,3" Click="ResetTotals_Click"
                         IsEnabled="{Binding IsConnected}" />
                 <TextBlock DockPanel.Dock="Right" Text="{Binding Activity.TotalsText}" Margin="0,0,16,0"
-                           VerticalAlignment="Center" Foreground="{StaticResource MutedText}" />
+                           VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
             </DockPanel>
         </Border>
 
         <!-- Chart -->
         <Border DockPanel.Dock="Bottom" Margin="16,0,16,12" Height="170"
-                Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource BorderBrush}"
+                Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="1" CornerRadius="6" Padding="10,6"
                 Visibility="{Binding ShowChart, Converter={StaticResource BoolToVis}}">
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
                     <TextBlock Text="{Binding ChartTitle}" FontWeight="SemiBold" VerticalAlignment="Center" />
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Rectangle Width="12" Height="3" Fill="#2563EB" VerticalAlignment="Center" />
-                        <TextBlock Text="Download" Margin="4,0,12,0" Foreground="{StaticResource MutedText}" />
-                        <Rectangle Width="12" Height="3" Fill="#EA580C" VerticalAlignment="Center" />
-                        <TextBlock Text="Upload" Margin="4,0,12,0" Foreground="{StaticResource MutedText}" />
+                        <Rectangle Width="12" Height="3" Fill="{DynamicResource ChartInBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Download" Margin="4,0,12,0" Foreground="{DynamicResource MutedText}" />
+                        <Rectangle Width="12" Height="3" Fill="{DynamicResource ChartOutBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Upload" Margin="4,0,12,0" Foreground="{DynamicResource MutedText}" />
                         <ComboBox ItemsSource="{Binding ChartWindows}" SelectedItem="{Binding ChartWindowSeconds}" Width="70"
                                   ItemStringFormat="{}{0} s" />
                     </StackPanel>
                 </DockPanel>
                 <charts:TrafficChart x:Name="Chart" History="{Binding ChartHistory}"
-                                     WindowSeconds="{Binding ChartWindowSeconds}" Units="{Binding Activity.Units}" />
+                                     WindowSeconds="{Binding ChartWindowSeconds}" Units="{Binding Activity.Units}"
+                                     InBrush="{DynamicResource ChartInBrush}" OutBrush="{DynamicResource ChartOutBrush}"
+                                     GridBrush="{DynamicResource ChartGridBrush}" LabelBrush="{DynamicResource MutedText}" />
             </DockPanel>
         </Border>
 
@@ -163,8 +178,8 @@
                       AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single"
                       HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="24"
                       CanUserReorderColumns="True" CanUserResizeRows="False"
-                      Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource BorderBrush}"
-                      RowBackground="{StaticResource PanelBackground}" AlternatingRowBackground="#FAFBFC"
+                      Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
+                      RowBackground="{DynamicResource PanelBackground}" AlternatingRowBackground="{DynamicResource AltRowBackground}"
                       EnableRowVirtualization="True" VirtualizingPanel.VirtualizationMode="Recycling"
                       Sorting="ActivityGrid_Sorting" MouseDoubleClick="ActivityGrid_MouseDoubleClick">
                 <DataGrid.RowStyle>
@@ -172,17 +187,17 @@
                         <Setter Property="ContextMenu" Value="{StaticResource RowMenu}" />
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsOnline}" Value="False">
-                                <Setter Property="Foreground" Value="#9AA3AF" />
+                                <Setter Property="Foreground" Value="{DynamicResource DimText}" />
                             </DataTrigger>
                             <DataTrigger Binding="{Binding IsApp}" Value="False">
-                                <Setter Property="Foreground" Value="{StaticResource MutedText}" />
+                                <Setter Property="Foreground" Value="{DynamicResource MutedText}" />
                                 <Setter Property="FontSize" Value="12" />
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </DataGrid.RowStyle>
                 <DataGrid.Columns>
-                    <DataGridTemplateColumn Header="Name" Width="*" SortMemberPath="Name" MinWidth="200">
+                    <DataGridTemplateColumn Header="Name" Width="*" SortMemberPath="Name" MinWidth="180">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate DataType="{x:Type vm:ActivityRow}">
                                 <StackPanel Orientation="Horizontal" ToolTip="{Binding Detail}">
@@ -195,6 +210,7 @@
                                         <ToggleButton.Style>
                                             <Style TargetType="ToggleButton">
                                                 <Setter Property="Visibility" Value="Hidden" />
+                                                <Setter Property="Foreground" Value="{DynamicResource MutedText}" />
                                                 <Setter Property="Content" Value="▸" />
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding HasChildren}" Value="True">
@@ -217,7 +233,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="Block in" Width="70" CanUserSort="False">
+                    <DataGridTemplateColumn Header="Block in" Width="76" MinWidth="76" CanUserSort="False">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate DataType="{x:Type vm:ActivityRow}">
                                 <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Tag="In"
@@ -227,7 +243,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="Block out" Width="78" CanUserSort="False">
+                    <DataGridTemplateColumn Header="Block out" Width="86" MinWidth="86" CanUserSort="False">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate DataType="{x:Type vm:ActivityRow}">
                                 <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Tag="Out"
@@ -237,7 +253,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="DL Limit" Width="96" CanUserSort="False">
+                    <DataGridTemplateColumn Header="DL Limit" Width="104" MinWidth="104" CanUserSort="False">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate DataType="{x:Type vm:ActivityRow}">
                                 <StackPanel Orientation="Horizontal" Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}"
@@ -249,7 +265,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="UL Limit" Width="96" CanUserSort="False">
+                    <DataGridTemplateColumn Header="UL Limit" Width="104" MinWidth="104" CanUserSort="False">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate DataType="{x:Type vm:ActivityRow}">
                                 <StackPanel Orientation="Horizontal" Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}"
@@ -261,16 +277,16 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="DL Rate" Width="95" SortMemberPath="RateIn" Binding="{Binding RateInText}"
+                    <DataGridTextColumn Header="DL Rate" Width="88" MinWidth="88" SortMemberPath="RateIn" Binding="{Binding RateInText}"
                                         ElementStyle="{StaticResource NumberCell}"
                                         Visibility="{Binding Data.ShowRateIn, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
-                    <DataGridTextColumn Header="UL Rate" Width="95" SortMemberPath="RateOut" Binding="{Binding RateOutText}"
+                    <DataGridTextColumn Header="UL Rate" Width="88" MinWidth="88" SortMemberPath="RateOut" Binding="{Binding RateOutText}"
                                         ElementStyle="{StaticResource NumberCell}"
                                         Visibility="{Binding Data.ShowRateOut, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
-                    <DataGridTextColumn Header="DL Total" Width="90" SortMemberPath="TotalIn" Binding="{Binding TotalInText}"
+                    <DataGridTextColumn Header="DL Total" Width="92" MinWidth="92" SortMemberPath="TotalIn" Binding="{Binding TotalInText}"
                                         ElementStyle="{StaticResource NumberCell}"
                                         Visibility="{Binding Data.ShowTotalIn, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
-                    <DataGridTextColumn Header="UL Total" Width="90" SortMemberPath="TotalOut" Binding="{Binding TotalOutText}"
+                    <DataGridTextColumn Header="UL Total" Width="92" MinWidth="92" SortMemberPath="TotalOut" Binding="{Binding TotalOutText}"
                                         ElementStyle="{StaticResource NumberCell}"
                                         Visibility="{Binding Data.ShowTotalOut, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
                 </DataGrid.Columns>
@@ -278,7 +294,7 @@
 
             <!-- Shown over the empty grid when not connected -->
             <TextBlock Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap"
-                       MaxWidth="420" TextAlignment="Center" Foreground="{StaticResource BadBrush}" Text="{Binding StatusText}">
+                       MaxWidth="420" TextAlignment="Center" Foreground="{DynamicResource BadBrush}" Text="{Binding StatusText}">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
                         <Style.Triggers>
@@ -293,7 +309,7 @@
             <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Center" Background="Transparent"
                           Visibility="{Binding ShowInfoPane, Converter={StaticResource BoolToVis}}" />
 
-            <Border Grid.Column="2" Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource BorderBrush}"
+            <Border Grid.Column="2" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="1" CornerRadius="6" Padding="12"
                     Visibility="{Binding ShowInfoPane, Converter={StaticResource BoolToVis}}">
                 <DockPanel>
@@ -304,7 +320,7 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:InfoItem}">
                                     <StackPanel Margin="0,0,0,8">
-                                        <TextBlock Text="{Binding Label}" Foreground="{StaticResource MutedText}" FontSize="11" />
+                                        <TextBlock Text="{Binding Label}" Foreground="{DynamicResource MutedText}" FontSize="11" />
                                         <TextBox Text="{Binding Value, Mode=OneWay}" IsReadOnly="True" BorderThickness="0"
                                                  Background="Transparent" TextWrapping="Wrap" Padding="0" />
                                     </StackPanel>
@@ -321,7 +337,7 @@
         <!-- Blocker -->
         <TabItem Header="Blocker" Padding="14,4">
             <DockPanel Margin="8">
-                <Border DockPanel.Dock="Top" Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource BorderBrush}"
+                <Border DockPanel.Dock="Top" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1" CornerRadius="6" Padding="14,10" Margin="0,0,0,10" IsEnabled="{Binding IsConnected}">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
@@ -334,26 +350,26 @@
                                       ToolTip="What happens to outgoing connections no blocker rule matches. Ask shows a prompt." />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                            <TextBlock Text="Quick zone blocker:" VerticalAlignment="Center" Foreground="{StaticResource MutedText}" />
+                            <TextBlock Text="Quick zone blocker:" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
                             <CheckBox Content="Block Internet in" IsChecked="{Binding BlockInternetIn}" Margin="12,0,0,0" />
                             <CheckBox Content="Block Internet out" IsChecked="{Binding BlockInternetOut}" Margin="12,0,0,0" />
                             <CheckBox Content="Block local network in" IsChecked="{Binding BlockLocalIn}" Margin="24,0,0,0" />
                             <CheckBox Content="Block local network out" IsChecked="{Binding BlockLocalOut}" Margin="12,0,0,0" />
                         </StackPanel>
-                        <TextBlock Text="{Binding Blocker.StatusText}" Margin="0,10,0,0" Foreground="{StaticResource MutedText}" />
-                        <TextBlock Text="{Binding Blocker.LastError}" Foreground="{StaticResource BadBrush}" />
+                        <TextBlock Text="{Binding Blocker.StatusText}" Margin="0,10,0,0" Foreground="{DynamicResource MutedText}" />
+                        <TextBlock Text="{Binding Blocker.LastError}" Foreground="{DynamicResource BadBrush}" />
                     </StackPanel>
                 </Border>
                 <TextBlock DockPanel.Dock="Top" Text="Pending blocker requests" FontWeight="SemiBold" Margin="2,0,0,6" />
-                <TextBlock DockPanel.Dock="Bottom" Margin="2,8,0,0" Foreground="{StaticResource MutedText}"
+                <TextBlock DockPanel.Dock="Bottom" Margin="2,8,0,0" Foreground="{DynamicResource MutedText}"
                            Text="Blocker rules are listed with all other rules in the Rules tab. Quick block per app is in the Activity tab." />
                 <DataGrid x:Name="PendingGrid" ItemsSource="{Binding Blocker.Pending}" AutoGenerateColumns="False" IsReadOnly="True"
                           HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="28" SelectionMode="Single"
-                          Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource BorderBrush}">
+                          Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Application" Binding="{Binding App.DisplayName}" Width="200" />
                         <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="80" />
-                        <DataGridTextColumn Header="Protocol" Binding="{Binding Protocol}" Width="70" />
+                        <DataGridTextColumn Header="Protocol" Binding="{Binding Protocol}" Width="80" />
                         <DataGridTextColumn Header="Remote" Binding="{Binding RemoteAddress}" Width="160" />
                         <DataGridTextColumn Header="Port" Binding="{Binding RemotePort}" Width="60" />
                         <DataGridTextColumn Header="Host" Binding="{Binding RemoteHost}" Width="*" />
@@ -380,12 +396,12 @@
                     <Button Content="Edit" Padding="10,3" Margin="8,0,0,0" Click="EditFilter_Click" IsEnabled="{Binding IsConnected}" />
                     <Button Content="Delete" Padding="10,3" Margin="8,0,0,0" Click="DeleteFilter_Click" IsEnabled="{Binding IsConnected}" />
                     <Button Content="Add rule for filter" Padding="10,3" Margin="24,0,0,0" Click="AddRuleForFilter_Click" IsEnabled="{Binding IsConnected}" />
-                    <TextBlock Text="{Binding Rules.LastError}" Foreground="{StaticResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Rules.LastError}" Foreground="{DynamicResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
                 </StackPanel>
                 <DataGrid x:Name="FiltersGrid" ItemsSource="{Binding Rules.Filters}" SelectedItem="{Binding Rules.SelectedFilter}"
                           AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single" HeadersVisibility="Column"
-                          GridLinesVisibility="None" RowHeight="24" Background="{StaticResource PanelBackground}"
-                          BorderBrush="{StaticResource BorderBrush}" AlternatingRowBackground="#FAFBFC"
+                          GridLinesVisibility="None" RowHeight="24" Background="{DynamicResource PanelBackground}"
+                          BorderBrush="{DynamicResource BorderBrush}" AlternatingRowBackground="{DynamicResource AltRowBackground}"
                           MouseDoubleClick="FiltersGrid_MouseDoubleClick">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="220" />
@@ -413,18 +429,18 @@
                             ToolTip="Among rules of equal weight, the first matching one wins" />
                     <Button Content="Move down" Padding="10,3" Margin="8,0,0,0" IsEnabled="{Binding IsConnected}"
                             Command="{Binding Rules.MoveDownCommand}" CommandParameter="{Binding Rules.SelectedRule}" />
-                    <TextBlock Text="{Binding Rules.LastError}" Foreground="{StaticResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Rules.LastError}" Foreground="{DynamicResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
                 </StackPanel>
                 <DataGrid x:Name="RulesGrid" ItemsSource="{Binding Rules.Rules}" SelectedItem="{Binding Rules.SelectedRule}"
                           AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single" HeadersVisibility="Column"
-                          GridLinesVisibility="None" RowHeight="24" Background="{StaticResource PanelBackground}"
-                          BorderBrush="{StaticResource BorderBrush}" AlternatingRowBackground="#FAFBFC"
+                          GridLinesVisibility="None" RowHeight="24" Background="{DynamicResource PanelBackground}"
+                          BorderBrush="{DynamicResource BorderBrush}" AlternatingRowBackground="{DynamicResource AltRowBackground}"
                           MouseDoubleClick="RulesGrid_MouseDoubleClick">
                     <DataGrid.RowStyle>
                         <Style TargetType="DataGridRow">
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsEnabled}" Value="False">
-                                    <Setter Property="Foreground" Value="#9AA3AF" />
+                                    <Setter Property="Foreground" Value="{DynamicResource DimText}" />
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
@@ -435,7 +451,7 @@
                         <DataGridTextColumn Header="For" Binding="{Binding For}" Width="200" />
                         <DataGridTextColumn Header="Dir" Binding="{Binding Direction}" Width="55" />
                         <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="150" />
-                        <DataGridTextColumn Header="Weight" Binding="{Binding Weight}" Width="60" />
+                        <DataGridTextColumn Header="Weight" Binding="{Binding Weight}" Width="66" />
                         <DataGridTextColumn Header="State" Binding="{Binding State}" Width="75" />
                         <DataGridTextColumn Header="Expires" Binding="{Binding Expires}" Width="120" />
                         <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" Width="*" />

@@ -20,11 +20,20 @@ public sealed class TrafficChart : FrameworkElement
         nameof(Units), typeof(UnitMode), typeof(TrafficChart),
         new FrameworkPropertyMetadata(UnitMode.Bytes, FrameworkPropertyMetadataOptions.AffectsRender));
 
-    private static readonly Pen InPen = Freeze(new Pen(new SolidColorBrush(Color.FromRgb(0x25, 0x63, 0xEB)), 1.6));
-    private static readonly Pen OutPen = Freeze(new Pen(new SolidColorBrush(Color.FromRgb(0xEA, 0x58, 0x0C)), 1.6));
-    private static readonly Pen GridPen = Freeze(new Pen(new SolidColorBrush(Color.FromRgb(0xE5, 0xE7, 0xEB)), 1));
-    private static readonly Brush LabelBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x5F, 0x6B, 0x7A)));
-    private static readonly Brush InFill = Freeze(new SolidColorBrush(Color.FromArgb(0x22, 0x25, 0x63, 0xEB)));
+    // Colors come from the theme (set with DynamicResource), so switching themes repaints the chart.
+    public static readonly DependencyProperty InBrushProperty = BrushProperty(nameof(InBrush), Color.FromRgb(0x25, 0x63, 0xEB));
+    public static readonly DependencyProperty OutBrushProperty = BrushProperty(nameof(OutBrush), Color.FromRgb(0xEA, 0x58, 0x0C));
+    public static readonly DependencyProperty GridBrushProperty = BrushProperty(nameof(GridBrush), Color.FromRgb(0xE5, 0xE7, 0xEB));
+    public static readonly DependencyProperty LabelBrushProperty = BrushProperty(nameof(LabelBrush), Color.FromRgb(0x5F, 0x6B, 0x7A));
+
+    private static DependencyProperty BrushProperty(string name, Color fallback) => DependencyProperty.Register(
+        name, typeof(Brush), typeof(TrafficChart),
+        new FrameworkPropertyMetadata(Freeze(new SolidColorBrush(fallback)), FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public Brush InBrush { get => (Brush)GetValue(InBrushProperty); set => SetValue(InBrushProperty, value); }
+    public Brush OutBrush { get => (Brush)GetValue(OutBrushProperty); set => SetValue(OutBrushProperty, value); }
+    public Brush GridBrush { get => (Brush)GetValue(GridBrushProperty); set => SetValue(GridBrushProperty, value); }
+    public Brush LabelBrush { get => (Brush)GetValue(LabelBrushProperty); set => SetValue(LabelBrushProperty, value); }
 
     public RateHistory? History
     {
@@ -60,11 +69,12 @@ public sealed class TrafficChart : FrameworkElement
         long max = Math.Max(1024, points.Count == 0 ? 0 : points.Max(p => Math.Max(p.In, p.Out)));
         long scale = NiceCeiling(max);
         double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var gridPen = Freeze(new Pen(GridBrush, 1));
 
         for (int i = 0; i <= 4; i++)
         {
             double y = top + height * i / 4;
-            dc.DrawLine(GridPen, new Point(left, y), new Point(left + width, y));
+            dc.DrawLine(gridPen, new Point(left, y), new Point(left + width, y));
             long value = scale * (4 - i) / 4;
             var text = Text(ByteFormatter.Rate(value, Units), dpi);
             dc.DrawText(text, new Point(left - 6 - text.Width, y - text.Height / 2));
@@ -98,9 +108,11 @@ public sealed class TrafficChart : FrameworkElement
             Polyline(g, points.Select(p => Map(p, p.Out)), closed: false);
 
         dc.PushClip(new RectangleGeometry(new Rect(left, top, width, height)));
-        dc.DrawGeometry(InFill, null, inArea);
-        dc.DrawGeometry(null, InPen, inLine);
-        dc.DrawGeometry(null, OutPen, outLine);
+        Brush inFill = InBrush.CloneCurrentValue();
+        inFill.Opacity = 0.13;
+        dc.DrawGeometry(Freeze(inFill), null, inArea);
+        dc.DrawGeometry(null, Freeze(new Pen(InBrush, 1.6)), inLine);
+        dc.DrawGeometry(null, Freeze(new Pen(OutBrush, 1.6)), outLine);
         dc.Pop();
     }
 
@@ -133,12 +145,13 @@ public sealed class TrafficChart : FrameworkElement
         return 10 * magnitude;
     }
 
-    private static FormattedText Text(string s, double dpi) =>
+    private FormattedText Text(string s, double dpi) =>
         new(s, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 11, LabelBrush, dpi);
 
     private static T Freeze<T>(T freezable) where T : Freezable
     {
-        freezable.Freeze();
+        if (freezable.CanFreeze)
+            freezable.Freeze();
         return freezable;
     }
 }
