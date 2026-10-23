@@ -48,6 +48,9 @@ dotnet run --project src/NetWarden.Service
 
 # End-to-end tests against the installed service
 $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
+
+# Release: tests, self-contained publish, installer -> artifacts\release\NetWarden-Setup-<version>.exe
+.\scripts\build-release.ps1            # -SkipTests to skip the test run
 ```
 
 ## IPC methods
@@ -78,6 +81,20 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 | `settings.changed` | `ServiceSettings` |
 | `blocker.request` / `blocker.resolved` | `BlockerRequest` / `BlockerResolved` |
 | `packetfilter.status` | `PacketFilterStatus` |
+
+## Release / installer
+- `scripts\build-release.ps1` publishes the client as one self-contained file (renamed `NetWarden.exe`;
+  the assembly stays `NetWarden.Client` because pack URIs use it) and the service as a self-contained
+  folder (WinDivert.dll/.sys must sit next to it), then compiles `installer\NetWarden.iss`.
+- Inno Setup 6.7.1 comes from the `Tools.InnoSetup` NuGet package into `tools\` (gitignored); the
+  script checks ISCC.exe's Authenticode signature before running it.
+- The installer (admin, x64, Windows 10+) installs to Program Files, replaces any existing `NetWarden`
+  service (including one from `install-service.ps1`) and registers it: auto start, restart on failure.
+- Uninstall stops and deletes the service and stops the WinDivert driver; `%ProgramData%\NetWarden`
+  (rules, settings) is kept.
+- Size is ~85 MB because both programs carry the .NET runtime; nothing needs to be installed first.
+- Version comes from `Directory.Build.props`. Icon: `scripts\make-icon.py` (Pillow) draws
+  `src\NetWarden.Client\Assets\NetWarden.ico`.
 
 ## Blocker notes
 - WinDivert 2.2.2 (x64, LGPL) lives in `third_party/WinDivert` and is copied next to the service.

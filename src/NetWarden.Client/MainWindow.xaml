@@ -10,7 +10,7 @@
         xmlns:ipc="clr-namespace:NetWarden.Shared.Ipc;assembly=NetWarden.Shared"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
-        Title="NetWarden" Width="1360" Height="800" MinWidth="720" MinHeight="460"
+        Title="NetWarden" Icon="pack://application:,,,/NetWarden.Client;component/Assets/NetWarden.ico" Width="1360" Height="800" MinWidth="720" MinHeight="460"
         Background="{DynamicResource WindowBackground}"
         FontFamily="Segoe UI" FontSize="13">
     <Window.Resources>
