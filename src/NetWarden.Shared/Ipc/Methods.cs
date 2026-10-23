@@ -22,6 +22,10 @@ public static class Methods
     public const string FiltersSave = "filters.save";
     public const string FiltersDelete = "filters.delete";
     public const string FiltersEnsureForApp = "filters.ensureForApp";
+
+    public const string FilterStatus = "packetfilter.status";
+    public const string BlockerPending = "blocker.pending";
+    public const string BlockerAnswer = "blocker.answer";
 }
 
 /// <summary>Event names pushed by the service to every client.</summary>
@@ -35,4 +39,13 @@ public static class Events
 
     /// <summary>Payload: <see cref="Contracts.ServiceSettings"/>.</summary>
     public const string SettingsChanged = "settings.changed";
+
+    /// <summary>Payload: <see cref="Contracts.BlockerRequest"/>, when a connection waits for an answer.</summary>
+    public const string BlockerRequest = "blocker.request";
+
+    /// <summary>Payload: <see cref="Contracts.BlockerResolved"/>.</summary>
+    public const string BlockerResolved = "blocker.resolved";
+
+    /// <summary>Payload: <see cref="Contracts.PacketFilterStatus"/>, when filtering starts, stops or fails.</summary>
+    public const string FilterStatus = "packetfilter.status";
 }

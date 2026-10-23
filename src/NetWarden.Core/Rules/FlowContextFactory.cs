@@ -8,6 +8,8 @@ namespace NetWarden.Core.Rules;
 /// <summary>Builds a <see cref="FlowContext"/> for a socket from process, user and DNS knowledge.</summary>
 public sealed class FlowContextFactory(Func<int, AppInfo?> resolveApp, Func<int, ProcessUser?> resolveUser, DnsMap dns)
 {
+    public AppInfo? ResolveApp(int processId) => resolveApp(processId);
+
     public FlowContext? Create(int processId, TransportProtocol protocol, ConnectionKind kind,
         IPAddress local, int localPort, IPAddress remote, int remotePort)
     {

@@ -3,6 +3,7 @@ using NetWarden.Core;
 using NetWarden.Core.Apps;
 using NetWarden.Core.Ipc;
 using NetWarden.Core.Monitoring;
+using NetWarden.Core.Packets;
 using NetWarden.Core.Rules;
 using NetWarden.Shared.Contracts;
 using NetWarden.Shared.Ipc;
@@ -28,6 +29,9 @@ public sealed class ServiceOptions
     public string TrafficSessionName { get; set; } = EtwTrafficSource.DefaultSessionName;
     public string DnsSessionName { get; set; } = EtwDnsSource.DefaultSessionName;
 
+    /// <summary>When false WinDivert is never opened (tests).</summary>
+    public bool EnablePacketFilter { get; set; } = true;
+
     public string ResolveDataDirectory() => DataDirectory ?? AppPaths.DataDirectory;
 }
 
@@ -35,7 +39,8 @@ public static class ServiceHost
 {
     public const string ServiceName = "NetWarden";
 
-    public static IHost Build(string[] args, IDictionary<string, string?>? configOverrides = null)
+    public static IHost Build(string[] args, IDictionary<string, string?>? configOverrides = null,
+        Action<IServiceCollection>? configureServices = null)
     {
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
@@ -84,6 +89,17 @@ public static class ServiceHost
             sp.GetRequiredService<ProcessUsers>().Get,
             sp.GetRequiredService<DnsMap>()));
 
+        // Packet filtering
+        services.AddSingleton<IFlowOwnerLookup>(sp => new SocketOwnerLookup(sp.GetRequiredService<ISocketTable>(), sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton(sp => new Blocker(
+            () => sp.GetRequiredService<RuleRepository>().Current,
+            () => sp.GetRequiredService<SettingsService>().Current,
+            sp.GetRequiredService<IFlowOwnerLookup>(),
+            sp.GetRequiredService<FlowContextFactory>(),
+            sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton<PacketDeviceFactory>(_ => filter => new WinDivertDevice(filter));
+        services.AddSingleton<PacketFilterService>();
+
         // IPC
         services.AddSingleton(ServiceMethods.Create);
         services.AddSingleton(sp => new IpcServer(
@@ -95,6 +111,9 @@ public static class ServiceHost
         services.AddHostedService<IpcHostedService>();
         services.AddHostedService<ActivityService>();
         services.AddHostedService<RulesService>();
+        services.AddHostedService(sp => sp.GetRequiredService<PacketFilterService>());
+
+        configureServices?.Invoke(services);
 
         return builder.Build();
     }

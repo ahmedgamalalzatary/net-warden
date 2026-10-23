@@ -106,28 +106,37 @@ public sealed class RuleRepository
     }
 
     /// <summary>Returns the filter matching exactly this app, creating it if needed.</summary>
-    public FilterDefinition EnsureAppFilter(string appId, string displayName)
+    public FilterDefinition EnsureAppFilter(string appId, string displayName) =>
+        EnsureFilter(displayName, [new FilterFunction(FilterFunctionKind.AppId, true, [appId])]);
+
+    /// <summary>
+    /// Returns an existing plain filter with exactly these functions (values compared
+    /// case-insensitively), or creates one named <paramref name="baseName"/> (made unique).
+    /// </summary>
+    public FilterDefinition EnsureFilter(string baseName, IReadOnlyList<FilterFunction> functions)
     {
         lock (_lock)
         {
             var existing = _document.Filters.FirstOrDefault(f =>
-                f.Type == FilterType.Filter && f.Functions.Count == 1
-                && f.Functions[0] is { Kind: FilterFunctionKind.AppId, Match: true, Values: [var v] }
-                && string.Equals(v, appId, StringComparison.OrdinalIgnoreCase));
+                f.Type == FilterType.Filter && !f.IsPredefined && SameFunctions(f.Functions, functions));
             if (existing is not null)
                 return existing;
 
-            // Names are unique; disambiguate apps that share a display name.
-            string name = displayName.Trim();
+            string trimmed = baseName.Trim();
+            if (trimmed.Length > RuleValidator.MaxNameLength - 6)
+                trimmed = trimmed[..(RuleValidator.MaxNameLength - 6)];
+            string name = trimmed;
             for (int n = 2; _document.Filters.Any(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)); n++)
-                name = $"{displayName.Trim()} ({n})";
-            if (name.Length > RuleValidator.MaxNameLength)
-                name = name[..RuleValidator.MaxNameLength];
+                name = $"{trimmed} ({n})";
 
-            return SaveFilter(new FilterDefinition(Guid.Empty, name, FilterType.Filter, FilterPerType.None,
-                [new FilterFunction(FilterFunctionKind.AppId, true, [appId])], []));
+            return SaveFilter(new FilterDefinition(Guid.Empty, name, FilterType.Filter, FilterPerType.None, functions, []));
         }
     }
+
+    private static bool SameFunctions(IReadOnlyList<FilterFunction> a, IReadOnlyList<FilterFunction> b) =>
+        a.Count == b.Count && a.Zip(b).All(p =>
+            p.First.Kind == p.Second.Kind && p.First.Match == p.Second.Match
+            && (p.First.Values ?? []).SequenceEqual(p.Second.Values ?? [], StringComparer.OrdinalIgnoreCase));
 
     public RuleDefinition SaveRule(RuleDefinition rule)
     {

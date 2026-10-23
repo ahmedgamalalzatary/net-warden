@@ -21,6 +21,7 @@ public sealed class ServiceHostTests : IAsyncLifetime
             ["NetWarden:RestrictPipeToAdmins"] = "false",
             ["NetWarden:DataDirectory"] = _dir.Path,
             ["NetWarden:EnableTrafficSource"] = "false",
+            ["NetWarden:EnablePacketFilter"] = "false",
         });
         await _host.StartAsync();
         _client = new ServiceClient(_pipeName);

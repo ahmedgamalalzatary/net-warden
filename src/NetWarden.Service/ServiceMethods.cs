@@ -6,6 +6,7 @@ using NetWarden.Core;
 using NetWarden.Core.Apps;
 using NetWarden.Core.Ipc;
 using NetWarden.Core.Monitoring;
+using NetWarden.Core.Packets;
 using NetWarden.Core.Rules;
 using NetWarden.Shared.Contracts;
 using NetWarden.Shared.Ipc;
@@ -36,6 +37,15 @@ public static class ServiceMethods
 
         RegisterActivity(dispatcher, monitor, hostNames);
         RegisterRules(dispatcher, rules, flows, settings, time);
+
+        // Resolved lazily: PacketFilterService depends on the IPC server, which depends on this dispatcher.
+        PacketFilterService Filter() => sp.GetRequiredService<PacketFilterService>();
+        var blocker = sp.GetRequiredService<Blocker>();
+        dispatcher
+            .Register(Methods.FilterStatus, _ => Task.FromResult(Filter().Status))
+            .Register(Methods.BlockerPending, _ => Task.FromResult(blocker.Pending))
+            .Register<BlockerAnswer, bool>(Methods.BlockerAnswer, (a, _) =>
+                Task.FromResult(Filter().Answer(a ?? throw new ArgumentException("Answer required."))));
         return dispatcher;
     }
 
