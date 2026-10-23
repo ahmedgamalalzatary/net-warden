@@ -27,6 +27,7 @@ NetWarden.Service (LocalSystem)
         |       TrafficMonitor.Tick() every 1 s -> "activity.snapshot" event to all clients
         |-- RuleRepository (rules.json) -> CompiledRuleSet (immutable, swapped on change)
         |       inputs: ZoneClassifier, DnsMap (ETW DNS-Client), ProcessUsers (token SID)
+        |-- PacketFilterService -> PacketFilter (WinDivert thread) -> Blocker (verdicts, Ask)
         '-- SettingsService  %ProgramData%\NetWarden\settings.json (+ .bak)
 ```
 The pipe only admits Administrators and SYSTEM, so the client requires elevation.
@@ -64,12 +65,28 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 | `rules.save` / `rules.delete` | `RuleDefinition` / `DeleteRequest` | saved rule / `true` |
 | `rules.setEnabled` / `rules.reorder` | `SetRuleEnabledRequest` / `ReorderRulesRequest` | `true` |
 | `rules.evaluate` | `EvaluateRequest` | `FlowDecision` |
+| `packetfilter.status` | - | `PacketFilterStatus` |
+| `blocker.pending` | - | `BlockerRequest[]` |
+| `blocker.answer` | `BlockerAnswer` | `true` if the request was still pending |
 
 | Event | Payload |
 |---|---|
 | `activity.snapshot` | `ActivitySnapshot`, every second |
 | `rules.changed` | new generation (long) |
 | `settings.changed` | `ServiceSettings` |
+| `blocker.request` / `blocker.resolved` | `BlockerRequest` / `BlockerResolved` |
+| `packetfilter.status` | `PacketFilterStatus` |
+
+## Blocker notes
+- WinDivert 2.2.2 (x64, LGPL) lives in `third_party/WinDivert` and is copied next to the service.
+- Diverted: `!loopback and !impostor and ((tcp and tcp.Syn and !tcp.Ack) or udp)` - connection
+  attempts only. The handle is open only while blocker rules or non-Allow defaults exist.
+- Owner of a packet: socket tables (SYN_SENT row, listener, or UDP bind); unknown owners pass.
+- Verdicts are cached per flow and re-evaluated when the rules generation changes.
+- Ask: first packet(s) held, similar flows grouped into one request, denied after 60 s unanswered.
+  Remembered answers become rules (app / app + remote address / app + remote port; optional expiry).
+- When rules change, established IPv4 TCP connections that are now denied are reset.
+- Fail-open: if the service stops, the WinDivert handle closes and Windows passes traffic normally.
 
 ## Rules semantics
 - Filter = AND of functions; a function matches if any of its values matches; "is not" negates.

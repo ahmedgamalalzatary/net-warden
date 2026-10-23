@@ -47,6 +47,13 @@ public sealed partial class ActivityRow : ObservableObject
     [ObservableProperty]
     private bool _isOnline;
 
+    /// <summary>A quick-block Deny rule covers incoming connections of this app.</summary>
+    [ObservableProperty]
+    private bool _isBlockedIn;
+
+    [ObservableProperty]
+    private bool _isBlockedOut;
+
     [ObservableProperty]
     private long _rateIn;
 

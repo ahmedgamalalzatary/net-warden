@@ -76,6 +76,67 @@ public class InstalledServiceTests
         Assert.True(sent >= payload.Length, $"Service counted {sent} bytes, expected >= {payload.Length}.");
     }
 
+    [InstalledServiceFact]
+    public async Task Installed_service_blocks_and_unblocks_a_targeted_connection()
+    {
+        await using var client = new ServiceClient();
+        await client.ConnectAsync(TimeSpan.FromSeconds(5));
+        var target = System.Net.IPAddress.Parse("1.1.1.1");
+        if (!await CanConnect(System.Net.IPAddress.Parse("1.0.0.1")))
+            return; // no Internet
+
+        var filter = (await client.RequestAsync<FilterDefinition>(Methods.FiltersSave, new FilterDefinition(Guid.Empty,
+            $"E2E block {Guid.NewGuid():N}", FilterType.Filter, FilterPerType.None,
+            [
+                new FilterFunction(FilterFunctionKind.RemoteAddressInRange, true, ["1.1.1.1"]),
+                new FilterFunction(FilterFunctionKind.RemotePortInRange, true, ["80"]),
+                new FilterFunction(FilterFunctionKind.ProcessId, true, [Environment.ProcessId.ToString()]),
+            ], [])))!;
+        try
+        {
+            await client.RequestAsync<RuleDefinition>(Methods.RulesSave, new RuleDefinition(Guid.Empty, filter.Id,
+                RuleKind.Firewall, RuleDirection.Out, Action: FirewallAction.Deny));
+            var status = await WaitForStatus(client, running: true);
+            Assert.True(status.IsRunning, $"Filter not running: {status.Error}");
+
+            Assert.False(await CanConnect(target), "Connection was not blocked.");
+        }
+        finally
+        {
+            await client.RequestAsync<bool>(Methods.FiltersDelete, new DeleteRequest(filter.Id));
+        }
+
+        Assert.True(await CanConnect(target), "Connection still blocked after the rule was removed.");
+    }
+
+    private static async Task<PacketFilterStatus> WaitForStatus(ServiceClient client, bool running)
+    {
+        PacketFilterStatus status = null!;
+        for (int i = 0; i < 50; i++)
+        {
+            status = (await client.RequestAsync<PacketFilterStatus>(Methods.FilterStatus))!;
+            if (status.IsRunning == running)
+                break;
+            await Task.Delay(100);
+        }
+        return status;
+    }
+
+    private static async Task<bool> CanConnect(System.Net.IPAddress address)
+    {
+        using var tcp = new System.Net.Sockets.TcpClient();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        try
+        {
+            await tcp.ConnectAsync(address, 80, cts.Token);
+            return true;
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or System.Net.Sockets.SocketException)
+        {
+            return false;
+        }
+    }
+
     private static int ProcessIdOfService(string name) =>
         NetWarden.Core.Apps.ProcessInspector.GetRunningServices()
             .Single(kv => kv.Value.Any(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase))).Key;

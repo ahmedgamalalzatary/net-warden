@@ -5,6 +5,7 @@
              ShutdownMode="OnMainWindowClose">
     <Application.Resources>
         <local:MatchToIndexConverter x:Key="MatchToIndex" />
+        <local:EnumToBoolConverter x:Key="EnumToBool" />
         <SolidColorBrush x:Key="WindowBackground" Color="#F5F6F8" />
         <SolidColorBrush x:Key="PanelBackground" Color="#FFFFFF" />
         <SolidColorBrush x:Key="BorderBrush" Color="#DDE1E6" />

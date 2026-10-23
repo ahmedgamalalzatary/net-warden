@@ -16,6 +16,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly Dispatcher _dispatcher;
     private readonly ClientSettings _settings;
     private readonly Action _saveSettings;
+    private int _ticks;
 
     [ObservableProperty]
     private ConnectionState _connectionState = ConnectionState.Disconnected;
@@ -43,11 +44,17 @@ public sealed partial class MainViewModel : ObservableObject
         Activity = new ActivityViewModel(connection, settings, saveSettings, icons.Get, ports);
         Info = new InfoViewModel(connection, ports);
         Rules = new RulesViewModel(connection);
+        Blocker = new BlockerViewModel(connection, Rules);
         Activity.Updated += () =>
         {
             OnPropertyChanged(nameof(ChartHistory));
             Info.Refresh();
+            RefreshBlockStates();
+            // Packet counters change constantly; refresh them every few snapshots.
+            if (++_ticks % 3 == 0 && IsConnected)
+                _ = Blocker.LoadAsync();
         };
+        Rules.Reloaded += RefreshBlockStates;
 
         _connection.StateChanged += state => _dispatcher.InvokeAsync(() => HandleStateChanged(state));
         _connection.EventReceived += OnServiceEvent;
@@ -56,6 +63,101 @@ public sealed partial class MainViewModel : ObservableObject
     public ActivityViewModel Activity { get; }
     public InfoViewModel Info { get; }
     public RulesViewModel Rules { get; }
+    public BlockerViewModel Blocker { get; }
+
+    public IReadOnlyList<FirewallAction> FirewallActions { get; } = Enum.GetValues<FirewallAction>();
+
+    // Global switches and blocker defaults, written straight to the service.
+    public bool IsLimiterEnabled
+    {
+        get => SettingsFromService?.IsLimiterEnabled ?? false;
+        set => _ = UpdateSettingsAsync(s => s.IsLimiterEnabled = value);
+    }
+
+    public bool IsBlockerEnabled
+    {
+        get => SettingsFromService?.IsBlockerEnabled ?? false;
+        set => _ = UpdateSettingsAsync(s => s.IsBlockerEnabled = value);
+    }
+
+    public bool IsPriorityEnabled
+    {
+        get => SettingsFromService?.IsPriorityEnabled ?? false;
+        set => _ = UpdateSettingsAsync(s => s.IsPriorityEnabled = value);
+    }
+
+    public FirewallAction DefaultFirewallIn
+    {
+        get => SettingsFromService?.DefaultFirewallIn ?? FirewallAction.Allow;
+        set => _ = UpdateSettingsAsync(s => s.DefaultFirewallIn = value);
+    }
+
+    public FirewallAction DefaultFirewallOut
+    {
+        get => SettingsFromService?.DefaultFirewallOut ?? FirewallAction.Allow;
+        set => _ = UpdateSettingsAsync(s => s.DefaultFirewallOut = value);
+    }
+
+    // Quick zone blocker: whole-computer block of the Internet or local network zone.
+    public bool BlockInternetIn { get => ZoneBlocked(PredefinedFilters.Internet, RuleDirection.In); set => _ = SetZoneAsync(PredefinedFilters.Internet, RuleDirection.In, value); }
+    public bool BlockInternetOut { get => ZoneBlocked(PredefinedFilters.Internet, RuleDirection.Out); set => _ = SetZoneAsync(PredefinedFilters.Internet, RuleDirection.Out, value); }
+    public bool BlockLocalIn { get => ZoneBlocked(PredefinedFilters.LocalNetwork, RuleDirection.In); set => _ = SetZoneAsync(PredefinedFilters.LocalNetwork, RuleDirection.In, value); }
+    public bool BlockLocalOut { get => ZoneBlocked(PredefinedFilters.LocalNetwork, RuleDirection.Out); set => _ = SetZoneAsync(PredefinedFilters.LocalNetwork, RuleDirection.Out, value); }
+
+    private bool ZoneBlocked(Guid filter, RuleDirection direction) => QuickBlock.IsBlocked(Rules.Snapshot, filter, direction);
+
+    private async Task SetZoneAsync(Guid filter, RuleDirection direction, bool block)
+    {
+        await Blocker.SetBlockedAsync(filter, null, direction, block);
+        RefreshBlockStates();
+    }
+
+    /// <summary>Quick block for one app from the activity grid.</summary>
+    public async Task SetAppBlockedAsync(ActivityRow row, RuleDirection direction, bool block)
+    {
+        if (row.App?.App is not { } app)
+            return;
+        await Blocker.SetBlockedAsync(null, app, direction, block);
+        RefreshBlockStates();
+    }
+
+    private void RefreshBlockStates()
+    {
+        var snapshot = Rules.Snapshot;
+        foreach (var row in Activity.Rows.Where(r => r.IsApp && r.App is not null))
+        {
+            Guid? filter = QuickBlock.AppFilterId(snapshot, row.App!.App.Id);
+            row.IsBlockedIn = QuickBlock.IsBlocked(snapshot, filter, RuleDirection.In);
+            row.IsBlockedOut = QuickBlock.IsBlocked(snapshot, filter, RuleDirection.Out);
+        }
+        foreach (string name in new[] { nameof(BlockInternetIn), nameof(BlockInternetOut), nameof(BlockLocalIn), nameof(BlockLocalOut) })
+            OnPropertyChanged(name);
+    }
+
+    /// <summary>Copies the service settings, applies a change and saves it; the change event refreshes the UI.</summary>
+    public async Task UpdateSettingsAsync(Action<ServiceSettings> change)
+    {
+        if (SettingsFromService is not { } current)
+            return;
+        var copy = IpcJson.FromElement<ServiceSettings>(IpcJson.ToElement(current))!;
+        change(copy);
+        try
+        {
+            SettingsFromService = await _connection.RequestAsync<ServiceSettings>(Methods.SettingsUpdate, copy);
+        }
+        catch (Exception ex) when (ex is IpcRemoteException or IpcDisconnectedException)
+        {
+            StatusText = ex.Message;
+            OnSettingsFromServiceChanged(current);
+        }
+    }
+
+    partial void OnSettingsFromServiceChanged(ServiceSettings? value)
+    {
+        foreach (string name in new[] { nameof(IsLimiterEnabled), nameof(IsBlockerEnabled), nameof(IsPriorityEnabled),
+                     nameof(DefaultFirewallIn), nameof(DefaultFirewallOut) })
+            OnPropertyChanged(name);
+    }
 
     public bool IsConnected => ConnectionState == ConnectionState.Connected;
 
@@ -134,6 +236,18 @@ public sealed partial class MainViewModel : ObservableObject
                 if (IpcJson.FromElement<ServiceSettings>(payload) is { } settings)
                     _dispatcher.InvokeAsync(() => SettingsFromService = settings);
                 break;
+            case Events.BlockerRequest:
+                if (IpcJson.FromElement<BlockerRequest>(payload) is { } request)
+                    _dispatcher.InvokeAsync(() => Blocker.OnRequest(request));
+                break;
+            case Events.BlockerResolved:
+                if (IpcJson.FromElement<BlockerResolved>(payload) is { } resolved)
+                    _dispatcher.InvokeAsync(() => Blocker.OnResolved(resolved));
+                break;
+            case Events.FilterStatus:
+                if (IpcJson.FromElement<PacketFilterStatus>(payload) is { } status)
+                    _dispatcher.InvokeAsync(() => Blocker.Status = status);
+                break;
         }
     }
 
@@ -165,6 +279,7 @@ public sealed partial class MainViewModel : ObservableObject
             ServiceInfo = await _connection.RequestAsync<ServiceInfo>(Methods.ServiceInfo);
             SettingsFromService = await _connection.RequestAsync<ServiceSettings>(Methods.SettingsGet);
             await Rules.ReloadAsync();
+            await Blocker.LoadAsync();
             if (await _connection.RequestAsync<ActivitySnapshot>(Methods.ActivityGet) is { } snapshot)
                 Activity.Apply(snapshot);
         }

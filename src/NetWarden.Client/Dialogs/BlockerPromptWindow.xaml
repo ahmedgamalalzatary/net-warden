@@ -1,0 +1,54 @@
+<Window x:Class="NetWarden.Client.Dialogs.BlockerPromptWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:NetWarden.Client.ViewModels"
+        xmlns:c="clr-namespace:NetWarden.Shared.Contracts;assembly=NetWarden.Shared"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:BlockerPromptViewModel}"
+        Title="NetWarden Blocker" Width="500" SizeToContent="Height" ResizeMode="NoResize"
+        Topmost="True" ShowInTaskbar="True" WindowStartupLocation="CenterScreen"
+        Background="{StaticResource WindowBackground}" FontFamily="Segoe UI" FontSize="13">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </Window.Resources>
+    <StackPanel Margin="18">
+        <TextBlock Text="{Binding Headline}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Target}" FontSize="18" Margin="0,6,0,0" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Details}" Foreground="{StaticResource MutedText}" Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12" />
+
+        <Border Margin="0,14,0,0" Padding="12,10" Background="{StaticResource PanelBackground}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6">
+            <StackPanel>
+                <RadioButton Content="Only this time" GroupName="Remember"
+                             IsChecked="{Binding Remember, Converter={StaticResource EnumToBool}, ConverterParameter={x:Static c:RememberMode.Once}}" />
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <RadioButton Content="Remember for" GroupName="Remember" VerticalAlignment="Center"
+                                 IsChecked="{Binding Remember, Converter={StaticResource EnumToBool}, ConverterParameter={x:Static c:RememberMode.Temporary}}" />
+                    <ComboBox Width="70" Margin="8,0" ItemsSource="{Binding MinuteChoices}" SelectedItem="{Binding Minutes}"
+                              IsEnabled="{Binding IsTemporary}" />
+                    <TextBlock Text="minutes" VerticalAlignment="Center" />
+                </StackPanel>
+                <RadioButton Content="Always (create a rule)" GroupName="Remember" Margin="0,6,0,0"
+                             IsChecked="{Binding Remember, Converter={StaticResource EnumToBool}, ConverterParameter={x:Static c:RememberMode.Always}}" />
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <TextBlock Text="Rule applies to" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox Width="290" ItemsSource="{Binding ScopeChoices}" DisplayMemberPath="Text" SelectedValuePath="Scope"
+                              SelectedValue="{Binding Scope}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <TextBlock Text="{Binding Error}" Foreground="{StaticResource BadBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+        <DockPanel Margin="0,12,0,0">
+            <TextBlock Text="{Binding MoreText}" Foreground="{StaticResource MutedText}" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Allow" Width="100" Padding="0,5" Command="{Binding AllowCommand}" IsDefault="True" />
+                <Button Content="Deny" Width="100" Padding="0,5" Margin="8,0,0,0" Command="{Binding DenyCommand}" />
+            </StackPanel>
+        </DockPanel>
+        <TextBlock Margin="0,10,0,0" FontSize="11" Foreground="{StaticResource MutedText}" TextWrapping="Wrap"
+                   Text="Unanswered requests are denied after a minute. You can also answer them in the Blocker tab." />
+    </StackPanel>
+</Window>

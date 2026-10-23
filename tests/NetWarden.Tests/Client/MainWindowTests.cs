@@ -25,6 +25,9 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
 
     private static readonly AppInfo Browser = Snapshots.App("browser", "Browser");
     private static readonly AppInfo Game = Snapshots.App("game", "Game");
+    private static readonly FilterDefinition BrowserFilter = new(Guid.NewGuid(), "Browser", FilterType.Filter, FilterPerType.None,
+        [new FilterFunction(FilterFunctionKind.AppId, true, ["browser"])], []);
+    private readonly List<RuleDefinition> _savedRules = [];
 
     private static ActivitySnapshot Snapshot() => Snapshots.Snapshot(0,
         Snapshots.Activity(Browser, rateIn: 10, connections: [Snapshots.Conn("b1", 50000), Snapshots.Conn("b2", 50001)]),
@@ -36,6 +39,18 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
             .Register(Methods.ServiceInfo, _ => Task.FromResult(new ServiceInfo("0.1.0", 1, DateTimeOffset.UtcNow, true, false, "test")))
             .Register(Methods.SettingsGet, _ => Task.FromResult(new ServiceSettings()))
             .Register(Methods.ActivityGet, _ => Task.FromResult(Snapshot()))
+            .Register(Methods.FilterStatus, _ => Task.FromResult(new PacketFilterStatus(true, true, null, 10, 2)))
+            .Register(Methods.BlockerPending, _ => Task.FromResult(new List<BlockerRequest>
+            {
+                new(Guid.NewGuid(), Browser, 100, TransportProtocol.Tcp, ConnectionKind.Connect, "192.168.1.14", 50000,
+                    "1.1.1.1", 443, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), null),
+            }))
+            .Register<EnsureAppFilterRequest, FilterDefinition>(Methods.FiltersEnsureForApp, (_, _) => Task.FromResult(BrowserFilter))
+            .Register<RuleDefinition, RuleDefinition>(Methods.RulesSave, (r, _) =>
+            {
+                _savedRules.Add(r!);
+                return Task.FromResult(r!);
+            })
             .Register(Methods.RulesGet, _ => Task.FromResult(new RulesSnapshot(1, PredefinedFilters.All,
                 PredefinedFilters.DefaultRules.Select(r => new RuleView(r, RuleState.Active, 2, "Local network")).ToList())));
         _server = new IpcServer(_pipe, dispatcher, NullLogger.Instance);
@@ -62,6 +77,9 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
 
     private DataGrid Grid => _window.ActivityGrid;
 
+    private void SelectTab(string header) =>
+        _window.Tabs.SelectedItem = _window.Tabs.Items.OfType<TabItem>().Single(t => (string)t.Header == header);
+
     private List<string> VisibleNames() =>
         WpfHarness.Descendants<DataGridRow>(Grid).OrderBy(r => r.GetIndex()).Select(r => ((ActivityRow)r.Item).Name).ToList();
 
@@ -72,10 +90,10 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
         {
             for (int i = 0; i < 50 && _vm.Rules.Rules.Count == 0; i++)
                 await WpfHarness.Settle(30);
-            _window.Tabs.SelectedIndex = 2;
+            SelectTab("Rules");
             await WpfHarness.Settle();
             int ruleRows = WpfHarness.Descendants<DataGridRow>(_window.RulesGrid).Count();
-            _window.Tabs.SelectedIndex = 1;
+            SelectTab("Filters");
             await WpfHarness.Settle();
             return (ruleRows, WpfHarness.Descendants<DataGridRow>(_window.FiltersGrid).Count());
         });
@@ -104,6 +122,60 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
             await WpfHarness.Settle();
             ruleWindow.Close();
         });
+    }
+
+    [Fact]
+    public async Task Blocker_tab_shows_status_and_pending_requests()
+    {
+        var (pending, status) = await wpf.RunAsync(async () =>
+        {
+            for (int i = 0; i < 50 && _vm.Blocker.Pending.Count == 0; i++)
+                await WpfHarness.Settle(30);
+            SelectTab("Blocker");
+            await WpfHarness.Settle();
+            return (WpfHarness.Descendants<DataGridRow>(_window.PendingGrid).Count(), _vm.Blocker.StatusText);
+        });
+
+        Assert.Equal(1, pending);
+        Assert.StartsWith("Filtering connections", status);
+    }
+
+    [Fact]
+    public async Task Prompt_window_shows_pending_request()
+    {
+        string target = await wpf.RunAsync(async () =>
+        {
+            for (int i = 0; i < 50 && _vm.Blocker.Pending.Count == 0; i++)
+                await WpfHarness.Settle(30);
+            var prompt = new NetWarden.Client.Dialogs.BlockerPromptWindow(new BlockerPromptViewModel(_vm.Blocker));
+            prompt.Show();
+            await WpfHarness.Settle();
+            string text = ((BlockerPromptViewModel)prompt.DataContext).Target;
+            prompt.Close();
+            return text;
+        });
+
+        Assert.Equal("1.1.1.1 : 443 (TCP)", target);
+    }
+
+    [Fact]
+    public async Task Quick_block_checkbox_creates_deny_rule_for_the_app()
+    {
+        await wpf.RunAsync(async () =>
+        {
+            await WpfHarness.Settle();
+            var row = WpfHarness.Descendants<DataGridRow>(Grid).Single(r => ((ActivityRow)r.Item).Name == "Browser");
+            var box = WpfHarness.Descendants<CheckBox>(row).Single(c => (string)c.Tag == "Out");
+            // OnClick is what a mouse click runs (it toggles and raises Click).
+            typeof(ButtonBase).GetMethod("OnClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .Invoke(box, null);
+            for (int i = 0; i < 50 && _savedRules.Count == 0; i++)
+                await WpfHarness.Settle(30);
+        });
+
+        var rule = Assert.Single(_savedRules);
+        Assert.Equal(BrowserFilter.Id, rule.FilterId);
+        Assert.Equal((RuleDirection.Out, FirewallAction.Deny), (rule.Direction, rule.Action!.Value));
     }
 
     [Fact]

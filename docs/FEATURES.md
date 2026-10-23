@@ -29,10 +29,10 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 2.4 Rule list: enable/disable, direction (in/out/both), weight/order, notes, rule state (active/inactive/disabled)
 
 ## Phase 3 - Blocker (firewall)
-- [ ] 3.1 Allow/Deny rules per filter, in/out
-- [ ] 3.2 Default action in/out (Allow / Deny / Ask), global Blocker on/off
-- [ ] 3.3 Quick block toggle per app, quick zone blocker
-- [ ] 3.4 Ask mode: prompt window for new connections, remember / temporary, pending requests list
+- [x] 3.1 Allow/Deny rules per filter, in/out
+- [x] 3.2 Default action in/out (Allow / Deny / Ask), global Blocker on/off
+- [x] 3.3 Quick block toggle per app, quick zone blocker
+- [x] 3.4 Ask mode: prompt window for new connections, remember / temporary, pending requests list
 
 ## Phase 4 - Limiter
 - [ ] 4.1 DL/UL speed limit rules per filter, global Limiter on/off

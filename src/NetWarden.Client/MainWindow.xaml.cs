@@ -19,6 +19,7 @@ public partial class MainWindow : Window
             if (ViewModel is not { } vm)
                 return;
             vm.Activity.Updated += Chart.Refresh;
+            vm.Blocker.RequestArrived += _ => ShowBlockerPrompt();
             vm.PropertyChanged += OnViewModelPropertyChanged;
             UpdateInfoPaneWidth();
         };
@@ -215,5 +216,46 @@ public partial class MainWindow : Window
     {
         if (!string.IsNullOrEmpty(message))
             MessageBox.Show(this, message, "NetWarden", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    // ----- Blocker -----
+
+    private BlockerPromptWindow? _prompt;
+
+    private void ShowBlockerPrompt()
+    {
+        if (ViewModel is not { } vm)
+            return;
+        if (_prompt is not null)
+        {
+            _prompt.Activate();
+            return;
+        }
+        _prompt = new BlockerPromptWindow(new BlockerPromptViewModel(vm.Blocker));
+        _prompt.Closed += (_, _) => _prompt = null;
+        _prompt.Show();
+    }
+
+    private async void QuickBlock_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { DataContext: ActivityRow row } box || ViewModel is not { } vm)
+            return;
+        var direction = (string)box.Tag == "In" ? RuleDirection.In : RuleDirection.Out;
+        bool block = direction == RuleDirection.In ? !row.IsBlockedIn : !row.IsBlockedOut;
+        await vm.SetAppBlockedAsync(row, direction, block);
+        // The binding is one-way; put the box back in line with the real state.
+        box.IsChecked = direction == RuleDirection.In ? row.IsBlockedIn : row.IsBlockedOut;
+        if (vm.Blocker.LastError is { } error)
+            ShowError(error);
+    }
+
+    private async void PendingAllow_Click(object sender, RoutedEventArgs e) => await AnswerPending(sender, true);
+
+    private async void PendingDeny_Click(object sender, RoutedEventArgs e) => await AnswerPending(sender, false);
+
+    private async Task AnswerPending(object sender, bool allow)
+    {
+        if ((sender as FrameworkElement)?.DataContext is BlockerRequest request && ViewModel is { } vm)
+            await vm.Blocker.AnswerAsync(request, allow, RememberMode.Once, RuleScope.App, 0);
     }
 }

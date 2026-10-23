@@ -48,13 +48,13 @@
                 <TextBlock Text="NetWarden" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" IsEnabled="{Binding IsConnected}">
                     <Border Style="{StaticResource FeatureChip}">
-                        <CheckBox Content="Limiter" IsChecked="{Binding SettingsFromService.IsLimiterEnabled, Mode=OneWay}" IsHitTestVisible="False" />
+                        <CheckBox Content="Limiter" IsChecked="{Binding IsLimiterEnabled}" ToolTip="Turn limiter on or off for the whole computer" />
                     </Border>
                     <Border Style="{StaticResource FeatureChip}">
-                        <CheckBox Content="Blocker" IsChecked="{Binding SettingsFromService.IsBlockerEnabled, Mode=OneWay}" IsHitTestVisible="False" />
+                        <CheckBox Content="Blocker" IsChecked="{Binding IsBlockerEnabled}" ToolTip="Turn blocker on or off for the whole computer" />
                     </Border>
                     <Border Style="{StaticResource FeatureChip}">
-                        <CheckBox Content="Priorities" IsChecked="{Binding SettingsFromService.IsPriorityEnabled, Mode=OneWay}" IsHitTestVisible="False" />
+                        <CheckBox Content="Priorities" IsChecked="{Binding IsPriorityEnabled}" ToolTip="Turn priorities on or off for the whole computer" />
                     </Border>
                 </StackPanel>
             </DockPanel>
@@ -207,6 +207,26 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="Block in" Width="62" CanUserSort="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate DataType="{x:Type vm:ActivityRow}">
+                                <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Tag="In"
+                                          IsChecked="{Binding IsBlockedIn, Mode=OneWay}" Click="QuickBlock_Click"
+                                          Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}"
+                                          ToolTip="Block incoming connections of this app" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="Block out" Width="68" CanUserSort="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate DataType="{x:Type vm:ActivityRow}">
+                                <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Tag="Out"
+                                          IsChecked="{Binding IsBlockedOut, Mode=OneWay}" Click="QuickBlock_Click"
+                                          Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}"
+                                          ToolTip="Block outgoing connections of this app" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTextColumn Header="DL Rate" Width="95" SortMemberPath="RateIn" Binding="{Binding RateInText}"
                                         ElementStyle="{StaticResource NumberCell}"
                                         Visibility="{Binding Data.ShowRateIn, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
@@ -262,6 +282,60 @@
             </Border>
         </Grid>
         </DockPanel>
+        </TabItem>
+
+        <!-- Blocker -->
+        <TabItem Header="Blocker" Padding="14,4">
+            <DockPanel Margin="8">
+                <Border DockPanel.Dock="Top" Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="14,10" Margin="0,0,0,10" IsEnabled="{Binding IsConnected}">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <CheckBox Content="Blocker enabled" IsChecked="{Binding IsBlockerEnabled}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBlock Text="Unmatched incoming:" Margin="28,0,6,0" VerticalAlignment="Center" />
+                            <ComboBox Width="80" ItemsSource="{Binding FirewallActions}" SelectedItem="{Binding DefaultFirewallIn}"
+                                      ToolTip="What happens to incoming connections no blocker rule matches" />
+                            <TextBlock Text="Unmatched outgoing:" Margin="20,0,6,0" VerticalAlignment="Center" />
+                            <ComboBox Width="80" ItemsSource="{Binding FirewallActions}" SelectedItem="{Binding DefaultFirewallOut}"
+                                      ToolTip="What happens to outgoing connections no blocker rule matches. Ask shows a prompt." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <TextBlock Text="Quick zone blocker:" VerticalAlignment="Center" Foreground="{StaticResource MutedText}" />
+                            <CheckBox Content="Block Internet in" IsChecked="{Binding BlockInternetIn}" Margin="12,0,0,0" />
+                            <CheckBox Content="Block Internet out" IsChecked="{Binding BlockInternetOut}" Margin="12,0,0,0" />
+                            <CheckBox Content="Block local network in" IsChecked="{Binding BlockLocalIn}" Margin="24,0,0,0" />
+                            <CheckBox Content="Block local network out" IsChecked="{Binding BlockLocalOut}" Margin="12,0,0,0" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding Blocker.StatusText}" Margin="0,10,0,0" Foreground="{StaticResource MutedText}" />
+                        <TextBlock Text="{Binding Blocker.LastError}" Foreground="{StaticResource BadBrush}" />
+                    </StackPanel>
+                </Border>
+                <TextBlock DockPanel.Dock="Top" Text="Pending blocker requests" FontWeight="SemiBold" Margin="2,0,0,6" />
+                <TextBlock DockPanel.Dock="Bottom" Margin="2,8,0,0" Foreground="{StaticResource MutedText}"
+                           Text="Blocker rules are listed with all other rules in the Rules tab. Quick block per app is in the Activity tab." />
+                <DataGrid x:Name="PendingGrid" ItemsSource="{Binding Blocker.Pending}" AutoGenerateColumns="False" IsReadOnly="True"
+                          HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="28" SelectionMode="Single"
+                          Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource BorderBrush}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Application" Binding="{Binding App.DisplayName}" Width="200" />
+                        <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="80" />
+                        <DataGridTextColumn Header="Protocol" Binding="{Binding Protocol}" Width="70" />
+                        <DataGridTextColumn Header="Remote" Binding="{Binding RemoteAddress}" Width="160" />
+                        <DataGridTextColumn Header="Port" Binding="{Binding RemotePort}" Width="60" />
+                        <DataGridTextColumn Header="Host" Binding="{Binding RemoteHost}" Width="*" />
+                        <DataGridTemplateColumn Header="" Width="150">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="Allow" Padding="10,1" Click="PendingAllow_Click" />
+                                        <Button Content="Deny" Padding="10,1" Margin="6,0,0,0" Click="PendingDeny_Click" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
         </TabItem>
 
         <!-- Filters -->
