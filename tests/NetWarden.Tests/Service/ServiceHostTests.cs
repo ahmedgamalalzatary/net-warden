@@ -19,7 +19,7 @@ public sealed class ServiceHostTests : IAsyncLifetime
         {
             ["NetWarden:PipeName"] = _pipeName,
             ["NetWarden:RestrictPipeToAdmins"] = "false",
-            ["NetWarden:SettingsPath"] = _dir.File("settings.json"),
+            ["NetWarden:DataDirectory"] = _dir.Path,
             ["NetWarden:EnableTrafficSource"] = "false",
         });
         await _host.StartAsync();
@@ -142,6 +142,66 @@ public sealed class ServiceHostTests : IAsyncLifetime
     {
         await Assert.ThrowsAsync<IpcRemoteException>(() =>
             _client.RequestAsync<string>(Methods.DnsReverse, new ReverseDnsRequest("not-an-ip")));
+    }
+
+    [Fact]
+    public async Task Rules_round_trip_over_ipc_and_changes_are_broadcast()
+    {
+        var changed = new TaskCompletionSource<long>();
+        _client.EventReceived += (method, payload) =>
+        {
+            if (method == Events.RulesChanged)
+                changed.TrySetResult(payload!.Value.GetInt64());
+        };
+
+        var initial = await _client.RequestAsync<RulesSnapshot>(Methods.RulesGet);
+        Assert.Equal(PredefinedFilters.All.Count, initial!.Filters.Count);
+
+        var filter = await _client.RequestAsync<FilterDefinition>(Methods.FiltersEnsureForApp,
+            new EnsureAppFilterRequest(@"c:\apps\game.exe", "Game"));
+        var rule = await _client.RequestAsync<RuleDefinition>(Methods.RulesSave,
+            new RuleDefinition(Guid.Empty, filter!.Id, RuleKind.Firewall, RuleDirection.Out, Action: FirewallAction.Deny));
+
+        long generation = await changed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(generation > initial.Generation);
+
+        var decision = await _client.RequestAsync<FlowDecision>(Methods.RulesEvaluate, new EvaluateRequest(
+            @"c:\apps\game.exe", @"c:\apps\game.exe", 1, TransportProtocol.Tcp, ConnectionKind.Connect,
+            "192.168.1.2", 50000, "8.8.8.8", 443));
+        Assert.Equal(FirewallAction.Deny, decision!.Firewall);
+        Assert.Equal(rule!.Id, decision.FirewallRuleId);
+
+        Assert.True(await _client.RequestAsync<bool>(Methods.RulesSetEnabled, new SetRuleEnabledRequest(rule.Id, false)));
+        Assert.True(await _client.RequestAsync<bool>(Methods.RulesDelete, new DeleteRequest(rule.Id)));
+        Assert.True(await _client.RequestAsync<bool>(Methods.FiltersDelete, new DeleteRequest(filter.Id)));
+        Assert.True(File.Exists(_dir.File("rules.json")));
+    }
+
+    [Fact]
+    public async Task Invalid_rule_is_rejected_with_reason()
+    {
+        var ex = await Assert.ThrowsAsync<IpcRemoteException>(() => _client.RequestAsync<RuleDefinition>(Methods.RulesSave,
+            new RuleDefinition(Guid.Empty, PredefinedFilters.Internet, RuleKind.Limit, RuleDirection.In, LimitBytesPerSecond: 0)));
+        Assert.Contains("greater than zero", ex.RemoteMessage);
+    }
+
+    [Fact]
+    public async Task Settings_update_persists_and_is_broadcast()
+    {
+        var changed = new TaskCompletionSource<ServiceSettings?>();
+        _client.EventReceived += (method, payload) =>
+        {
+            if (method == Events.SettingsChanged)
+                changed.TrySetResult(IpcJson.FromElement<ServiceSettings>(payload));
+        };
+        var settings = (await _client.RequestAsync<ServiceSettings>(Methods.SettingsGet))!;
+        settings.DefaultFirewallOut = FirewallAction.Ask;
+
+        await _client.RequestAsync<ServiceSettings>(Methods.SettingsUpdate, settings);
+
+        Assert.Equal(FirewallAction.Ask, (await changed.Task.WaitAsync(TimeSpan.FromSeconds(5)))!.DefaultFirewallOut);
+        Assert.Equal(FirewallAction.Ask, (await _client.RequestAsync<ServiceSettings>(Methods.SettingsGet))!.DefaultFirewallOut);
+        Assert.True(File.Exists(_dir.File("settings.json")));
     }
 
     [Fact]
