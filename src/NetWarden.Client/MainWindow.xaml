@@ -3,29 +3,57 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:NetWarden.Client"
         xmlns:vm="clr-namespace:NetWarden.Client.ViewModels"
+        xmlns:charts="clr-namespace:NetWarden.Client.Charts"
         xmlns:ipc="clr-namespace:NetWarden.Shared.Ipc;assembly=NetWarden.Shared"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
-        Title="NetWarden" Width="1000" Height="640" MinWidth="640" MinHeight="400"
+        Title="NetWarden" Width="1180" Height="760" MinWidth="720" MinHeight="460"
         Background="{StaticResource WindowBackground}"
         FontFamily="Segoe UI" FontSize="13">
+    <Window.Resources>
+        <local:BindingProxy x:Key="Proxy" Data="{Binding}" />
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <Style x:Key="NumberCell" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="Margin" Value="6,0" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+        </Style>
+
+        <Style x:Key="ToolbarLabel" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Foreground" Value="{StaticResource MutedText}" />
+        </Style>
+
+        <ContextMenu x:Key="RowMenu" Opened="RowMenu_Opened">
+            <MenuItem Tag="expand" Header="Expand / collapse" Click="Expand_Click" />
+            <Separator />
+            <MenuItem Tag="kill" Header="Kill connection(s)" Click="Kill_Click" />
+            <MenuItem Tag="hide" Header="Hide app" Click="Hide_Click" />
+            <Separator />
+            <MenuItem Header="Copy" Click="Copy_Click" />
+            <MenuItem Tag="folder" Header="Open file location" Click="OpenFolder_Click" />
+        </ContextMenu>
+    </Window.Resources>
+
     <DockPanel>
         <!-- Header: product name and global feature switches (wired up in later phases) -->
         <Border DockPanel.Dock="Top" Background="{StaticResource PanelBackground}"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
             <DockPanel>
                 <TextBlock Text="NetWarden" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                            IsEnabled="{Binding IsConnected}">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" IsEnabled="{Binding IsConnected}">
                     <Border Style="{StaticResource FeatureChip}">
-                        <CheckBox Content="Limiter" IsChecked="{Binding Settings.IsLimiterEnabled, Mode=OneWay}" IsHitTestVisible="False" />
+                        <CheckBox Content="Limiter" IsChecked="{Binding SettingsFromService.IsLimiterEnabled, Mode=OneWay}" IsHitTestVisible="False" />
                     </Border>
                     <Border Style="{StaticResource FeatureChip}">
-                        <CheckBox Content="Blocker" IsChecked="{Binding Settings.IsBlockerEnabled, Mode=OneWay}" IsHitTestVisible="False" />
+                        <CheckBox Content="Blocker" IsChecked="{Binding SettingsFromService.IsBlockerEnabled, Mode=OneWay}" IsHitTestVisible="False" />
                     </Border>
                     <Border Style="{StaticResource FeatureChip}">
-                        <CheckBox Content="Priorities" IsChecked="{Binding Settings.IsPriorityEnabled, Mode=OneWay}" IsHitTestVisible="False" />
+                        <CheckBox Content="Priorities" IsChecked="{Binding SettingsFromService.IsPriorityEnabled, Mode=OneWay}" IsHitTestVisible="False" />
                     </Border>
                 </StackPanel>
             </DockPanel>
@@ -51,32 +79,183 @@
                     </Ellipse.Style>
                 </Ellipse>
                 <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding Activity.LastError}" Foreground="{StaticResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
                 <TextBlock Text="{Binding ServiceSummary}" Foreground="{StaticResource MutedText}"
                            HorizontalAlignment="Right" VerticalAlignment="Center" />
             </DockPanel>
         </Border>
 
-        <!-- Main area: the Activity view lands here in phase 1 -->
-        <Border Margin="16" Background="{StaticResource PanelBackground}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420">
-                <TextBlock Text="Activity" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" TextAlignment="Center"
-                           Foreground="{StaticResource MutedText}"
-                           Text="Per-app traffic will appear here once monitoring is built." />
-                <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" TextAlignment="Center"
-                           Foreground="{StaticResource BadBrush}" Text="{Binding StatusText}">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsConnected}" Value="True">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-            </StackPanel>
+        <!-- Toolbar -->
+        <Border DockPanel.Dock="Top" Padding="16,10,16,0">
+            <DockPanel LastChildFill="False">
+                <TextBlock Text="Show" Style="{StaticResource ToolbarLabel}" />
+                <ComboBox Width="90" ItemsSource="{Binding Activity.Filters}" SelectedItem="{Binding Activity.Filter}" />
+                <TextBox Width="220" Margin="12,0,0,0" VerticalContentAlignment="Center" Padding="4,2"
+                         Text="{Binding Activity.Search, UpdateSourceTrigger=PropertyChanged}"
+                         ToolTip="Search apps, paths and addresses" />
+                <TextBlock Text="Units" Style="{StaticResource ToolbarLabel}" Margin="16,0,6,0" />
+                <ComboBox Width="80" ItemsSource="{Binding Activity.UnitModes}" SelectedItem="{Binding Activity.Units}" />
+                <Menu Margin="12,0,0,0" VerticalAlignment="Center" Background="Transparent">
+                    <MenuItem Header="Columns ▾" Padding="6,3">
+                        <MenuItem Header="DL rate" IsCheckable="True" IsChecked="{Binding ShowRateIn}" />
+                        <MenuItem Header="UL rate" IsCheckable="True" IsChecked="{Binding ShowRateOut}" />
+                        <MenuItem Header="DL total" IsCheckable="True" IsChecked="{Binding ShowTotalIn}" />
+                        <MenuItem Header="UL total" IsCheckable="True" IsChecked="{Binding ShowTotalOut}" />
+                    </MenuItem>
+                    <MenuItem Header="View ▾" Padding="6,3">
+                        <MenuItem Header="Info pane" IsCheckable="True" IsChecked="{Binding ShowInfoPane}" />
+                        <MenuItem Header="Traffic chart" IsCheckable="True" IsChecked="{Binding ShowChart}" />
+                    </MenuItem>
+                </Menu>
+                <Button DockPanel.Dock="Right" Content="Reset totals" Padding="10,3" Click="ResetTotals_Click"
+                        IsEnabled="{Binding IsConnected}" />
+                <TextBlock DockPanel.Dock="Right" Text="{Binding Activity.TotalsText}" Margin="0,0,16,0"
+                           VerticalAlignment="Center" Foreground="{StaticResource MutedText}" />
+            </DockPanel>
         </Border>
+
+        <!-- Chart -->
+        <Border DockPanel.Dock="Bottom" Margin="16,0,16,12" Height="170"
+                Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1" CornerRadius="6" Padding="10,6"
+                Visibility="{Binding ShowChart, Converter={StaticResource BoolToVis}}">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+                    <TextBlock Text="{Binding ChartTitle}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Rectangle Width="12" Height="3" Fill="#2563EB" VerticalAlignment="Center" />
+                        <TextBlock Text="Download" Margin="4,0,12,0" Foreground="{StaticResource MutedText}" />
+                        <Rectangle Width="12" Height="3" Fill="#EA580C" VerticalAlignment="Center" />
+                        <TextBlock Text="Upload" Margin="4,0,12,0" Foreground="{StaticResource MutedText}" />
+                        <ComboBox ItemsSource="{Binding ChartWindows}" SelectedItem="{Binding ChartWindowSeconds}" Width="70"
+                                  ItemStringFormat="{}{0} s" />
+                    </StackPanel>
+                </DockPanel>
+                <charts:TrafficChart x:Name="Chart" History="{Binding ChartHistory}"
+                                     WindowSeconds="{Binding ChartWindowSeconds}" Units="{Binding Activity.Units}" />
+            </DockPanel>
+        </Border>
+
+        <!-- Main area: activity grid and info pane -->
+        <Grid Margin="16,10,16,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="320" />
+            </Grid.ColumnDefinitions>
+
+            <DataGrid x:Name="ActivityGrid" Grid.Column="0" ItemsSource="{Binding Activity.Rows}"
+                      SelectedItem="{Binding SelectedRow}"
+                      AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single"
+                      HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="24"
+                      CanUserReorderColumns="True" CanUserResizeRows="False"
+                      Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource BorderBrush}"
+                      RowBackground="{StaticResource PanelBackground}" AlternatingRowBackground="#FAFBFC"
+                      EnableRowVirtualization="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                      Sorting="ActivityGrid_Sorting" MouseDoubleClick="ActivityGrid_MouseDoubleClick">
+                <DataGrid.RowStyle>
+                    <Style TargetType="DataGridRow">
+                        <Setter Property="ContextMenu" Value="{StaticResource RowMenu}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsOnline}" Value="False">
+                                <Setter Property="Foreground" Value="#9AA3AF" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsApp}" Value="False">
+                                <Setter Property="Foreground" Value="{StaticResource MutedText}" />
+                                <Setter Property="FontSize" Value="12" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.RowStyle>
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="Name" Width="*" SortMemberPath="Name" MinWidth="200">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate DataType="{x:Type vm:ActivityRow}">
+                                <StackPanel Orientation="Horizontal" ToolTip="{Binding Detail}">
+                                    <Border Width="{Binding Indent}" />
+                                    <!-- UpdateSourceTrigger must be explicit: DataGrid otherwise defers cell
+                                         bindings to its row BindingGroup, which a read-only grid never commits. -->
+                                    <ToggleButton Width="16" Height="16" Margin="2,0" Padding="0" BorderThickness="0"
+                                                  Background="Transparent" Focusable="False"
+                                                  IsChecked="{Binding IsExpanded, UpdateSourceTrigger=PropertyChanged}">
+                                        <ToggleButton.Style>
+                                            <Style TargetType="ToggleButton">
+                                                <Setter Property="Visibility" Value="Hidden" />
+                                                <Setter Property="Content" Value="▸" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasChildren}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsApp}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                    <Trigger Property="IsChecked" Value="True">
+                                                        <Setter Property="Content" Value="▾" />
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ToggleButton.Style>
+                                    </ToggleButton>
+                                    <Image Source="{Binding Icon}" Width="16" Height="16" Margin="2,0,6,0"
+                                           Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}" />
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="DL Rate" Width="95" SortMemberPath="RateIn" Binding="{Binding RateInText}"
+                                        ElementStyle="{StaticResource NumberCell}"
+                                        Visibility="{Binding Data.ShowRateIn, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
+                    <DataGridTextColumn Header="UL Rate" Width="95" SortMemberPath="RateOut" Binding="{Binding RateOutText}"
+                                        ElementStyle="{StaticResource NumberCell}"
+                                        Visibility="{Binding Data.ShowRateOut, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
+                    <DataGridTextColumn Header="DL Total" Width="90" SortMemberPath="TotalIn" Binding="{Binding TotalInText}"
+                                        ElementStyle="{StaticResource NumberCell}"
+                                        Visibility="{Binding Data.ShowTotalIn, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
+                    <DataGridTextColumn Header="UL Total" Width="90" SortMemberPath="TotalOut" Binding="{Binding TotalOutText}"
+                                        ElementStyle="{StaticResource NumberCell}"
+                                        Visibility="{Binding Data.ShowTotalOut, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <!-- Shown over the empty grid when not connected -->
+            <TextBlock Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap"
+                       MaxWidth="420" TextAlignment="Center" Foreground="{StaticResource BadBrush}" Text="{Binding StatusText}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+
+            <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Center" Background="Transparent"
+                          Visibility="{Binding ShowInfoPane, Converter={StaticResource BoolToVis}}" />
+
+            <Border Grid.Column="2" Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="6" Padding="12"
+                    Visibility="{Binding ShowInfoPane, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding Info.Title}" FontSize="15" FontWeight="SemiBold"
+                               TextWrapping="Wrap" Margin="0,0,0,10" />
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Info.Items}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:InfoItem}">
+                                    <StackPanel Margin="0,0,0,8">
+                                        <TextBlock Text="{Binding Label}" Foreground="{StaticResource MutedText}" FontSize="11" />
+                                        <TextBox Text="{Binding Value, Mode=OneWay}" IsReadOnly="True" BorderThickness="0"
+                                                 Background="Transparent" TextWrapping="Wrap" Padding="0" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
     </DockPanel>
 </Window>

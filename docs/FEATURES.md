@@ -15,12 +15,12 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 0.5 Settings storage (JSON) in ProgramData
 
 ## Phase 1 - Monitoring
-- [ ] 1.1 Activity view: per-app DL/UL rate and DL/UL totals, live refresh, app icons
-- [ ] 1.2 App -> connections tree (protocol, local/remote addr+port, type: connect/accept/listen)
-- [ ] 1.3 View options: online/offline/all/hidden, search, units (auto bytes/bits), column selection, reset totals
-- [ ] 1.4 Info pane: app properties, process id, connection properties, port names, reverse DNS
-- [ ] 1.5 Kill connection(s)
-- [ ] 1.6 Realtime traffic chart (DL/UL, line/column, time window, per selected node)
+- [x] 1.1 Activity view: per-app DL/UL rate and DL/UL totals, live refresh, app icons
+- [x] 1.2 App -> connections tree (protocol, local/remote addr+port, type: connect/accept/listen)
+- [x] 1.3 View options: online/offline/all/hidden, search, units (auto bytes/bits), column selection, reset totals
+- [x] 1.4 Info pane: app properties, process id, connection properties, port names, reverse DNS
+- [x] 1.5 Kill connection(s) (IPv4 TCP only: Windows has no API for IPv6/UDP)
+- [x] 1.6 Realtime traffic chart (DL/UL line chart, 1/5/10 min window, per selected app or whole computer)
 
 ## Phase 2 - Filters & rules engine
 - [ ] 2.1 Zones: Internet, Local network, Loopback, Forwarded
@@ -72,7 +72,7 @@ Status: [ ] todo  [~] in progress  [x] done
 - [ ] 11.1 Tray icon (min/close to tray, show/hide, pending requests menu)
 - [ ] 11.2 Global hotkeys to toggle rules
 - [ ] 11.3 Run on startup, notifications
-- [ ] 11.4 Themes / accent colors, dockable panes and layout profiles
+- [ ] 11.4 Themes / accent colors, dockable panes and layout profiles, column/stacked chart styles
 - [ ] 11.5 Localization
 
 ## Phase 12 - Advanced

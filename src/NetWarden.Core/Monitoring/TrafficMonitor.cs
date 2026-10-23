@@ -88,10 +88,7 @@ public sealed class TrafficMonitor
                     listening.Add((s.ProcessId, s.LocalPort));
 
             foreach (var flow in _flows.Values)
-            {
                 flow.Socket = null;
-                flow.RateIn = flow.RateOut = 0;
-            }
 
             foreach (var s in sockets)
             {
@@ -108,8 +105,6 @@ public sealed class TrafficMonitor
                 Flow flow = GetFlow(key);
                 flow.TotalIn += delta.In;
                 flow.TotalOut += delta.Out;
-                flow.RateIn = (long)(delta.In / seconds);
-                flow.RateOut = (long)(delta.Out / seconds);
                 flow.LastActive = now;
                 flow.LastRemote = delta.LastRemote ?? flow.LastRemote;
                 flow.EtwLocal = delta.Local ?? flow.EtwLocal;
@@ -121,6 +116,19 @@ public sealed class TrafficMonitor
                     totals.TotalIn += delta.In;
                     totals.TotalOut += delta.Out;
                 }
+            }
+
+            // ETW delivers events in ~1 s batches that beat against the tick, so a single
+            // interval alternates between 0 and double. Rates span the last two intervals.
+            foreach (var (key, flow) in _flows)
+            {
+                pending.TryGetValue(key, out Pending delta);
+                double span = seconds + flow.PrevSeconds;
+                flow.RateIn = (long)((delta.In + flow.PrevIn) / span);
+                flow.RateOut = (long)((delta.Out + flow.PrevOut) / span);
+                flow.PrevIn = delta.In;
+                flow.PrevOut = delta.Out;
+                flow.PrevSeconds = seconds;
             }
 
             // Forget flows whose socket is gone and that have been quiet for a while.
@@ -300,6 +308,9 @@ public sealed class TrafficMonitor
         public long RateOut;
         public long TotalIn;
         public long TotalOut;
+        public long PrevIn;
+        public long PrevOut;
+        public double PrevSeconds;
         public DateTimeOffset LastActive;
         public IPEndPoint? LastRemote;
         public IPAddress? EtwLocal;

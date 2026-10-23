@@ -73,12 +73,31 @@ public class TrafficMonitorTests
         _monitor.Record(Tcp(100, TrafficDirection.In, 1000));
         TickAfter(1);
 
+        // One idle tick still averages in the previous interval; the second is fully idle.
+        Assert.Equal(500, Assert.Single(TickAfter(1).Apps).RateIn);
         var snap = TickAfter(1);
 
         var app = Assert.Single(snap.Apps);
         Assert.Equal(0, app.RateIn);
         Assert.Equal(1000, app.TotalIn);
         Assert.True(app.IsOnline);
+    }
+
+    [Fact]
+    public void Bursty_delivery_is_smoothed_over_two_intervals()
+    {
+        _monitor.Tick();
+        _sockets.Entries.Add(TcpSocket(100));
+        var rates = new List<long>();
+        for (int i = 0; i < 6; i++)
+        {
+            // Events arrive every other tick in double-size batches.
+            if (i % 2 == 1)
+                _monitor.Record(Tcp(100, TrafficDirection.In, 2000));
+            rates.Add(Assert.Single(TickAfter(1).Apps).RateIn);
+        }
+
+        Assert.All(rates.Skip(2), r => Assert.Equal(1000, r));
     }
 
     [Fact]

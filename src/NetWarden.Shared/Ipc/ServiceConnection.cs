@@ -14,7 +14,7 @@ public enum ConnectionState
 /// restarts or before it has started. Used by the UI, which should never have to
 /// handle reconnection itself.
 /// </summary>
-public sealed class ServiceConnection : IAsyncDisposable
+public sealed class ServiceConnection : IServiceRequester, IAsyncDisposable
 {
     private readonly string _pipeName;
     private readonly TimeSpan _connectTimeout;

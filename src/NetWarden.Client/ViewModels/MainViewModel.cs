@@ -1,6 +1,11 @@
+using System.Text.Json;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using NetWarden.Client.Charts;
+using NetWarden.Client.Services;
 using NetWarden.Shared.Contracts;
+using NetWarden.Shared.Formatting;
 using NetWarden.Shared.Ipc;
 
 namespace NetWarden.Client.ViewModels;
@@ -9,6 +14,8 @@ public sealed partial class MainViewModel : ObservableObject
 {
     private readonly ServiceConnection _connection;
     private readonly Dispatcher _dispatcher;
+    private readonly ClientSettings _settings;
+    private readonly Action _saveSettings;
 
     [ObservableProperty]
     private ConnectionState _connectionState = ConnectionState.Disconnected;
@@ -20,14 +27,33 @@ public sealed partial class MainViewModel : ObservableObject
     private ServiceInfo? _serviceInfo;
 
     [ObservableProperty]
-    private ServiceSettings? _settings;
+    private ServiceSettings? _settingsFromService;
 
-    public MainViewModel(ServiceConnection connection, Dispatcher dispatcher)
+    [ObservableProperty]
+    private ActivityRow? _selectedRow;
+
+    public MainViewModel(
+        ServiceConnection connection, Dispatcher dispatcher, ClientSettings settings, Action saveSettings,
+        IconCache icons, PortNames ports)
     {
         _connection = connection;
         _dispatcher = dispatcher;
+        _settings = settings;
+        _saveSettings = saveSettings;
+        Activity = new ActivityViewModel(connection, settings, saveSettings, icons.Get, ports);
+        Info = new InfoViewModel(connection, ports);
+        Activity.Updated += () =>
+        {
+            OnPropertyChanged(nameof(ChartHistory));
+            Info.Refresh();
+        };
+
         _connection.StateChanged += state => _dispatcher.InvokeAsync(() => HandleStateChanged(state));
+        _connection.EventReceived += OnServiceEvent;
     }
+
+    public ActivityViewModel Activity { get; }
+    public InfoViewModel Info { get; }
 
     public bool IsConnected => ConnectionState == ConnectionState.Connected;
 
@@ -35,9 +61,69 @@ public sealed partial class MainViewModel : ObservableObject
         ? $"Service v{i.Version} · PID {i.ProcessId} · {(i.IsWindowsService ? "Windows service" : "console mode")}"
         : "";
 
-    partial void OnConnectionStateChanged(ConnectionState value) => OnPropertyChanged(nameof(IsConnected));
+    // Column visibility; ids are stable so settings survive column reordering.
+    public bool ShowRateIn { get => IsColumnVisible("RateIn"); set => SetColumn("RateIn", value); }
+    public bool ShowRateOut { get => IsColumnVisible("RateOut"); set => SetColumn("RateOut", value); }
+    public bool ShowTotalIn { get => IsColumnVisible("TotalIn"); set => SetColumn("TotalIn", value); }
+    public bool ShowTotalOut { get => IsColumnVisible("TotalOut"); set => SetColumn("TotalOut", value); }
 
+    public bool ShowInfoPane
+    {
+        get => _settings.ShowInfoPane;
+        set { _settings.ShowInfoPane = value; _saveSettings(); OnPropertyChanged(); }
+    }
+
+    public bool ShowChart
+    {
+        get => _settings.ShowChart;
+        set { _settings.ShowChart = value; _saveSettings(); OnPropertyChanged(); }
+    }
+
+    public IReadOnlyList<int> ChartWindows { get; } = [60, 300, 600];
+
+    public int ChartWindowSeconds
+    {
+        get => _settings.ChartWindowSeconds;
+        set { _settings.ChartWindowSeconds = value; _saveSettings(); OnPropertyChanged(); }
+    }
+
+    /// <summary>The selected app's history (a connection shows its app), or the whole computer.</summary>
+    public RateHistory? ChartHistory => Activity.History.Get(ChartKey);
+
+    public string ChartTitle => SelectedAppRow is { } app ? $"Traffic · {app.Name}" : "Traffic · Whole computer";
+
+    private ActivityRow? SelectedAppRow => SelectedRow is null ? null : SelectedRow.IsApp ? SelectedRow : SelectedRow.Parent;
+
+    private string ChartKey => SelectedAppRow?.Key ?? ActivityViewModel.ComputerKey;
+
+    private bool IsColumnVisible(string id) => !_settings.Columns.TryGetValue(id, out bool visible) || visible;
+
+    private void SetColumn(string id, bool visible)
+    {
+        _settings.Columns[id] = visible;
+        _saveSettings();
+        OnPropertyChanged("Show" + id);
+    }
+
+    partial void OnConnectionStateChanged(ConnectionState value) => OnPropertyChanged(nameof(IsConnected));
     partial void OnServiceInfoChanged(ServiceInfo? value) => OnPropertyChanged(nameof(ServiceSummary));
+
+    partial void OnSelectedRowChanged(ActivityRow? value)
+    {
+        _ = Info.ShowAsync(value);
+        OnPropertyChanged(nameof(ChartHistory));
+        OnPropertyChanged(nameof(ChartTitle));
+    }
+
+    private void OnServiceEvent(string method, JsonElement? payload)
+    {
+        if (method != Events.ActivitySnapshot)
+            return;
+        // Deserialize on the pipe thread; only the cheap merge runs on the UI thread.
+        var snapshot = IpcJson.FromElement<ActivitySnapshot>(payload);
+        if (snapshot is not null)
+            _dispatcher.InvokeAsync(() => Activity.Apply(snapshot));
+    }
 
     private async void HandleStateChanged(ConnectionState state)
     {
@@ -51,7 +137,7 @@ public sealed partial class MainViewModel : ObservableObject
             case ConnectionState.Disconnected:
                 StatusText = _connection.LastError ?? "Disconnected";
                 ServiceInfo = null;
-                Settings = null;
+                SettingsFromService = null;
                 break;
             case ConnectionState.Connected:
                 StatusText = "Connected";
@@ -65,11 +151,16 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             ServiceInfo = await _connection.RequestAsync<ServiceInfo>(Methods.ServiceInfo);
-            Settings = await _connection.RequestAsync<ServiceSettings>(Methods.SettingsGet);
+            SettingsFromService = await _connection.RequestAsync<ServiceSettings>(Methods.SettingsGet);
+            if (await _connection.RequestAsync<ActivitySnapshot>(Methods.ActivityGet) is { } snapshot)
+                Activity.Apply(snapshot);
         }
         catch (Exception ex) when (ex is IpcDisconnectedException or IpcRemoteException)
         {
             StatusText = ex.Message;
         }
     }
+
+    [RelayCommand]
+    private void SetUnits(UnitMode units) => Activity.Units = units;
 }

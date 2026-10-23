@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,12 +18,14 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="System.IO" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NetWarden.Shared\NetWarden.Shared.csproj" />
     <ProjectReference Include="..\..\src\NetWarden.Core\NetWarden.Core.csproj" />
     <ProjectReference Include="..\..\src\NetWarden.Service\NetWarden.Service.csproj" />
+    <ProjectReference Include="..\..\src\NetWarden.Client\NetWarden.Client.csproj" />
   </ItemGroup>
 
 </Project>

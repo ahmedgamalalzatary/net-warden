@@ -7,7 +7,7 @@ using NetWarden.Core;
 using NetWarden.Core.Apps;
 using NetWarden.Core.Ipc;
 using NetWarden.Core.Monitoring;
-using NetWarden.Core.Settings;
+using NetWarden.Shared.Storage;
 using NetWarden.Shared.Contracts;
 using NetWarden.Shared.Ipc;
 

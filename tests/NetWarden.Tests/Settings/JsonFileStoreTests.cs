@@ -1,4 +1,4 @@
-using NetWarden.Core.Settings;
+using NetWarden.Shared.Storage;
 using NetWarden.Shared.Contracts;
 
 namespace NetWarden.Tests.Settings;
