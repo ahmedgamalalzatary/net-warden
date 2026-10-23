@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using NetWarden.Client.Dialogs;
 using NetWarden.Client.ViewModels;
 using NetWarden.Shared.Contracts;
 
@@ -66,6 +67,9 @@ public partial class MainWindow : Window
         {
             switch (item.Tag)
             {
+                case "rule":
+                    item.IsEnabled = row.IsApp && vm.IsConnected;
+                    break;
                 case "expand":
                     item.IsEnabled = row is { IsApp: true, HasChildren: true };
                     break;
@@ -120,5 +124,96 @@ public partial class MainWindow : Window
         if (MessageBox.Show(this, "Reset download and upload totals for all apps?", "Reset totals",
                 MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
             await vm.Activity.ResetTotalsCommand.ExecuteAsync(null);
+    }
+
+    // ----- Filters and rules -----
+
+    private async void AddRuleForRow_Click(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender)?.App?.App is not { } app || ViewModel is not { } vm)
+            return;
+        if (await vm.Rules.EnsureAppFilterAsync(app) is { } filter)
+            OpenRuleEditor(null, filter.Id);
+        else
+            ShowError(vm.Rules.LastError);
+    }
+
+    private void AddFilter_Click(object sender, RoutedEventArgs e) => OpenFilterEditor(null);
+
+    private void EditFilter_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel?.Rules.SelectedFilter is { } item)
+            OpenFilterEditor(item.Filter);
+    }
+
+    private void FiltersGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e) => EditFilter_Click(sender, e);
+
+    private async void DeleteFilter_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || vm.Rules.SelectedFilter is not { } item)
+            return;
+        if (item.IsPredefined)
+        {
+            ShowError("Predefined filters can't be deleted.");
+            return;
+        }
+        string rules = item.RuleCount > 0 ? $" Its {item.RuleCount} rule(s) will be deleted too." : "";
+        if (Confirm($"Delete filter '{item.Name}'?{rules}", "Delete filter") && !await vm.Rules.DeleteFilterAsync(item))
+            ShowError(vm.Rules.LastError);
+    }
+
+    private void AddRuleForFilter_Click(object sender, RoutedEventArgs e) =>
+        OpenRuleEditor(null, ViewModel?.Rules.SelectedFilter?.Filter.Id);
+
+    private void AddRule_Click(object sender, RoutedEventArgs e) => OpenRuleEditor(null, null);
+
+    private void EditRule_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel?.Rules.SelectedRule is { } item)
+            OpenRuleEditor(item.Rule, null);
+    }
+
+    private void RulesGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e) => EditRule_Click(sender, e);
+
+    private async void DeleteRule_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || vm.Rules.SelectedRule is not { } item)
+            return;
+        if (Confirm($"Delete the {item.Kind.ToLowerInvariant()} rule for '{item.For}'?", "Delete rule") && !await vm.Rules.DeleteRuleAsync(item))
+            ShowError(vm.Rules.LastError);
+    }
+
+    private void OpenFilterEditor(FilterDefinition? filter)
+    {
+        if (ViewModel is not { } vm || vm.Rules.Snapshot is not { } snapshot)
+            return;
+        if (filter?.IsPredefined == true)
+        {
+            ShowError("Predefined filters can't be edited.");
+            return;
+        }
+        var editor = new FilterEditorWindow(new FilterEditorViewModel(filter, snapshot.Filters),
+            async f => await vm.Rules.SaveFilterAsync(f) ? null : vm.Rules.LastError ?? "Saving failed.")
+        { Owner = this };
+        editor.ShowDialog();
+    }
+
+    private void OpenRuleEditor(RuleDefinition? rule, Guid? filterId, RuleKind? kind = null)
+    {
+        if (ViewModel is not { } vm || vm.Rules.Snapshot is not { } snapshot)
+            return;
+        var editor = new RuleEditorWindow(new RuleEditorViewModel(rule, snapshot.Filters, filterId, kind),
+            async r => await vm.Rules.SaveRuleAsync(r) ? null : vm.Rules.LastError ?? "Saving failed.")
+        { Owner = this };
+        editor.ShowDialog();
+    }
+
+    private bool Confirm(string message, string title) =>
+        MessageBox.Show(this, message, title, MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK;
+
+    private void ShowError(string? message)
+    {
+        if (!string.IsNullOrEmpty(message))
+            MessageBox.Show(this, message, "NetWarden", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 }

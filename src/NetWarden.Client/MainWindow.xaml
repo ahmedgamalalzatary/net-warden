@@ -29,6 +29,7 @@
         </Style>
 
         <ContextMenu x:Key="RowMenu" Opened="RowMenu_Opened">
+            <MenuItem Tag="rule" Header="Add rule..." Click="AddRuleForRow_Click" FontWeight="SemiBold" />
             <MenuItem Tag="expand" Header="Expand / collapse" Click="Expand_Click" />
             <Separator />
             <MenuItem Tag="kill" Header="Kill connection(s)" Click="Kill_Click" />
@@ -85,6 +86,9 @@
             </DockPanel>
         </Border>
 
+        <TabControl x:Name="Tabs" Margin="8,8,8,0" Background="Transparent" BorderThickness="0,1,0,0">
+        <TabItem Header="Activity" Padding="14,4">
+        <DockPanel>
         <!-- Toolbar -->
         <Border DockPanel.Dock="Top" Padding="16,10,16,0">
             <DockPanel LastChildFill="False">
@@ -257,5 +261,80 @@
                 </DockPanel>
             </Border>
         </Grid>
+        </DockPanel>
+        </TabItem>
+
+        <!-- Filters -->
+        <TabItem Header="Filters" Padding="14,4">
+            <DockPanel Margin="8">
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button Content="Add filter" Padding="10,3" Click="AddFilter_Click" IsEnabled="{Binding IsConnected}" />
+                    <Button Content="Edit" Padding="10,3" Margin="8,0,0,0" Click="EditFilter_Click" IsEnabled="{Binding IsConnected}" />
+                    <Button Content="Delete" Padding="10,3" Margin="8,0,0,0" Click="DeleteFilter_Click" IsEnabled="{Binding IsConnected}" />
+                    <Button Content="Add rule for filter" Padding="10,3" Margin="24,0,0,0" Click="AddRuleForFilter_Click" IsEnabled="{Binding IsConnected}" />
+                    <TextBlock Text="{Binding Rules.LastError}" Foreground="{StaticResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <DataGrid x:Name="FiltersGrid" ItemsSource="{Binding Rules.Filters}" SelectedItem="{Binding Rules.SelectedFilter}"
+                          AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single" HeadersVisibility="Column"
+                          GridLinesVisibility="None" RowHeight="24" Background="{StaticResource PanelBackground}"
+                          BorderBrush="{StaticResource BorderBrush}" AlternatingRowBackground="#FAFBFC"
+                          MouseDoubleClick="FiltersGrid_MouseDoubleClick">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="220" />
+                        <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="90" />
+                        <DataGridTextColumn Header="Per" Binding="{Binding PerType}" Width="100" />
+                        <DataGridTextColumn Header="Rules" Binding="{Binding RuleCount}" Width="60" />
+                        <DataGridCheckBoxColumn Header="Predefined" Binding="{Binding IsPredefined, Mode=OneWay}" Width="80" />
+                        <DataGridTextColumn Header="Definition" Binding="{Binding Definition}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </TabItem>
+
+        <!-- Rules -->
+        <TabItem Header="Rules" Padding="14,4">
+            <DockPanel Margin="8">
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button Content="Add rule" Padding="10,3" Click="AddRule_Click" IsEnabled="{Binding IsConnected}" />
+                    <Button Content="Edit" Padding="10,3" Margin="8,0,0,0" Click="EditRule_Click" IsEnabled="{Binding IsConnected}" />
+                    <Button Content="Delete" Padding="10,3" Margin="8,0,0,0" Click="DeleteRule_Click" IsEnabled="{Binding IsConnected}" />
+                    <Button Content="Enable / disable" Padding="10,3" Margin="8,0,0,0" IsEnabled="{Binding IsConnected}"
+                            Command="{Binding Rules.ToggleEnabledCommand}" CommandParameter="{Binding Rules.SelectedRule}" />
+                    <Button Content="Move up" Padding="10,3" Margin="24,0,0,0" IsEnabled="{Binding IsConnected}"
+                            Command="{Binding Rules.MoveUpCommand}" CommandParameter="{Binding Rules.SelectedRule}"
+                            ToolTip="Among rules of equal weight, the first matching one wins" />
+                    <Button Content="Move down" Padding="10,3" Margin="8,0,0,0" IsEnabled="{Binding IsConnected}"
+                            Command="{Binding Rules.MoveDownCommand}" CommandParameter="{Binding Rules.SelectedRule}" />
+                    <TextBlock Text="{Binding Rules.LastError}" Foreground="{StaticResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <DataGrid x:Name="RulesGrid" ItemsSource="{Binding Rules.Rules}" SelectedItem="{Binding Rules.SelectedRule}"
+                          AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single" HeadersVisibility="Column"
+                          GridLinesVisibility="None" RowHeight="24" Background="{StaticResource PanelBackground}"
+                          BorderBrush="{StaticResource BorderBrush}" AlternatingRowBackground="#FAFBFC"
+                          MouseDoubleClick="RulesGrid_MouseDoubleClick">
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsEnabled}" Value="False">
+                                    <Setter Property="Foreground" Value="#9AA3AF" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
+                    <DataGrid.Columns>
+                        <DataGridCheckBoxColumn Header="On" Binding="{Binding IsEnabled, Mode=OneWay}" Width="40" />
+                        <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="80" />
+                        <DataGridTextColumn Header="For" Binding="{Binding For}" Width="200" />
+                        <DataGridTextColumn Header="Dir" Binding="{Binding Direction}" Width="55" />
+                        <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="150" />
+                        <DataGridTextColumn Header="Weight" Binding="{Binding Weight}" Width="60" />
+                        <DataGridTextColumn Header="State" Binding="{Binding State}" Width="75" />
+                        <DataGridTextColumn Header="Expires" Binding="{Binding Expires}" Width="120" />
+                        <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </TabItem>
+        </TabControl>
     </DockPanel>
 </Window>

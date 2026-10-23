@@ -42,6 +42,7 @@ public sealed partial class MainViewModel : ObservableObject
         _saveSettings = saveSettings;
         Activity = new ActivityViewModel(connection, settings, saveSettings, icons.Get, ports);
         Info = new InfoViewModel(connection, ports);
+        Rules = new RulesViewModel(connection);
         Activity.Updated += () =>
         {
             OnPropertyChanged(nameof(ChartHistory));
@@ -54,6 +55,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     public ActivityViewModel Activity { get; }
     public InfoViewModel Info { get; }
+    public RulesViewModel Rules { get; }
 
     public bool IsConnected => ConnectionState == ConnectionState.Connected;
 
@@ -117,12 +119,22 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void OnServiceEvent(string method, JsonElement? payload)
     {
-        if (method != Events.ActivitySnapshot)
-            return;
-        // Deserialize on the pipe thread; only the cheap merge runs on the UI thread.
-        var snapshot = IpcJson.FromElement<ActivitySnapshot>(payload);
-        if (snapshot is not null)
-            _dispatcher.InvokeAsync(() => Activity.Apply(snapshot));
+        switch (method)
+        {
+            case Events.ActivitySnapshot:
+                // Deserialize on the pipe thread; only the cheap merge runs on the UI thread.
+                if (IpcJson.FromElement<ActivitySnapshot>(payload) is { } snapshot)
+                    _dispatcher.InvokeAsync(() => Activity.Apply(snapshot));
+                break;
+            case Events.RulesChanged:
+                long generation = payload?.GetInt64() ?? -1;
+                _dispatcher.InvokeAsync(() => Rules.ReloadAsync(generation));
+                break;
+            case Events.SettingsChanged:
+                if (IpcJson.FromElement<ServiceSettings>(payload) is { } settings)
+                    _dispatcher.InvokeAsync(() => SettingsFromService = settings);
+                break;
+        }
     }
 
     private async void HandleStateChanged(ConnectionState state)
@@ -152,6 +164,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             ServiceInfo = await _connection.RequestAsync<ServiceInfo>(Methods.ServiceInfo);
             SettingsFromService = await _connection.RequestAsync<ServiceSettings>(Methods.SettingsGet);
+            await Rules.ReloadAsync();
             if (await _connection.RequestAsync<ActivitySnapshot>(Methods.ActivityGet) is { } snapshot)
                 Activity.Apply(snapshot);
         }

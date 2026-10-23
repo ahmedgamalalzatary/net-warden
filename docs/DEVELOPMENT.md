@@ -25,7 +25,9 @@ NetWarden.Service (LocalSystem)
         |-- AppIdentityResolver (pid -> app: desktop / service / store / system)
         |-- EtwTrafficSource (kernel TCP/IP events) --> TrafficMonitor <-- SocketTable (IP Helper)
         |       TrafficMonitor.Tick() every 1 s -> "activity.snapshot" event to all clients
-        '-- JsonFileStore<ServiceSettings>  %ProgramData%\NetWarden\settings.json (+ .bak)
+        |-- RuleRepository (rules.json) -> CompiledRuleSet (immutable, swapped on change)
+        |       inputs: ZoneClassifier, DnsMap (ETW DNS-Client), ProcessUsers (token SID)
+        '-- SettingsService  %ProgramData%\NetWarden\settings.json (+ .bak)
 ```
 The pipe only admits Administrators and SYSTEM, so the client requires elevation.
 
@@ -55,10 +57,30 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 | `activity.resetTotals` | - | `true` |
 | `connections.kill` | `KillConnectionRequest` | `true` (IPv4 TCP only) |
 | `dns.reverse` | `ReverseDnsRequest { address }` | host name or null |
+| `settings.update` | `ServiceSettings` | saved settings |
+| `rules.get` | - | `RulesSnapshot` (filters, rules with state and effective weight) |
+| `filters.save` / `filters.delete` | `FilterDefinition` / `DeleteRequest` | saved filter / `true` |
+| `filters.ensureForApp` | `EnsureAppFilterRequest` | the app's filter (created if missing) |
+| `rules.save` / `rules.delete` | `RuleDefinition` / `DeleteRequest` | saved rule / `true` |
+| `rules.setEnabled` / `rules.reorder` | `SetRuleEnabledRequest` / `ReorderRulesRequest` | `true` |
+| `rules.evaluate` | `EvaluateRequest` | `FlowDecision` |
 
 | Event | Payload |
 |---|---|
 | `activity.snapshot` | `ActivitySnapshot`, every second |
+| `rules.changed` | new generation (long) |
+| `settings.changed` | `ServiceSettings` |
+
+## Rules semantics
+- Filter = AND of functions; a function matches if any of its values matches; "is not" negates.
+- Composite = (any base filter matches) AND its own functions; base filters can't be composite.
+- Default weight: whole computer 1, zones 2, other filters 3; explicit weight overrides. Higher wins.
+- Blocker: first matching rule by (weight desc, list order); otherwise default In/Out action.
+  Direction In = incoming/listening connections, Out = outgoing.
+- Limits: every matching limit applies (traffic must fit all), except limits whose weight is not above
+  a matching "ignore limit" rule. Per-type splits buckets per app / process / connection.
+- Default rules: ignore limits for Local network and Loopback. Rules with `ExpiresAt` are deleted when due.
+- Domain names come from the DNS-Client ETW provider (event 3008), mapped IP -> last queried name.
 
 ## Monitoring notes
 - ETW kernel TCP/IP events: `saddr`/`sport` are always local, `daddr`/`dport` remote (verified).

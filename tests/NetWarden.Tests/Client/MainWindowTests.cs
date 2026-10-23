@@ -35,7 +35,9 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
         var dispatcher = new IpcDispatcher()
             .Register(Methods.ServiceInfo, _ => Task.FromResult(new ServiceInfo("0.1.0", 1, DateTimeOffset.UtcNow, true, false, "test")))
             .Register(Methods.SettingsGet, _ => Task.FromResult(new ServiceSettings()))
-            .Register(Methods.ActivityGet, _ => Task.FromResult(Snapshot()));
+            .Register(Methods.ActivityGet, _ => Task.FromResult(Snapshot()))
+            .Register(Methods.RulesGet, _ => Task.FromResult(new RulesSnapshot(1, PredefinedFilters.All,
+                PredefinedFilters.DefaultRules.Select(r => new RuleView(r, RuleState.Active, 2, "Local network")).ToList())));
         _server = new IpcServer(_pipe, dispatcher, NullLogger.Instance);
         _server.Start();
 
@@ -62,6 +64,47 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
 
     private List<string> VisibleNames() =>
         WpfHarness.Descendants<DataGridRow>(Grid).OrderBy(r => r.GetIndex()).Select(r => ((ActivityRow)r.Item).Name).ToList();
+
+    [Fact]
+    public async Task Rules_and_filters_tabs_show_service_data()
+    {
+        var (rules, filters) = await wpf.RunAsync(async () =>
+        {
+            for (int i = 0; i < 50 && _vm.Rules.Rules.Count == 0; i++)
+                await WpfHarness.Settle(30);
+            _window.Tabs.SelectedIndex = 2;
+            await WpfHarness.Settle();
+            int ruleRows = WpfHarness.Descendants<DataGridRow>(_window.RulesGrid).Count();
+            _window.Tabs.SelectedIndex = 1;
+            await WpfHarness.Settle();
+            return (ruleRows, WpfHarness.Descendants<DataGridRow>(_window.FiltersGrid).Count());
+        });
+
+        Assert.Equal(2, rules);
+        Assert.Equal(4, filters);
+    }
+
+    [Fact]
+    public async Task Editor_dialogs_load_without_errors()
+    {
+        await wpf.RunAsync(async () =>
+        {
+            var filterVm = new FilterEditorViewModel(null, PredefinedFilters.All) { Name = "x" };
+            filterVm.AddFunctionCommand.Execute(null);
+            var filterWindow = new NetWarden.Client.Dialogs.FilterEditorWindow(filterVm, _ => Task.FromResult<string?>(null));
+            filterWindow.Show();
+            await WpfHarness.Settle();
+            filterVm.Type = FilterType.Composite;
+            await WpfHarness.Settle();
+            filterWindow.Close();
+
+            var ruleWindow = new NetWarden.Client.Dialogs.RuleEditorWindow(
+                new RuleEditorViewModel(null, PredefinedFilters.All, PredefinedFilters.Internet), _ => Task.FromResult<string?>(null));
+            ruleWindow.Show();
+            await WpfHarness.Settle();
+            ruleWindow.Close();
+        });
+    }
 
     [Fact]
     public async Task Loads_rows_from_service()

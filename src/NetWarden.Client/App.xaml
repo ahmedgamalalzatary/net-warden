@@ -1,8 +1,10 @@
 ﻿<Application x:Class="NetWarden.Client.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:NetWarden.Client"
              ShutdownMode="OnMainWindowClose">
     <Application.Resources>
+        <local:MatchToIndexConverter x:Key="MatchToIndex" />
         <SolidColorBrush x:Key="WindowBackground" Color="#F5F6F8" />
         <SolidColorBrush x:Key="PanelBackground" Color="#FFFFFF" />
         <SolidColorBrush x:Key="BorderBrush" Color="#DDE1E6" />

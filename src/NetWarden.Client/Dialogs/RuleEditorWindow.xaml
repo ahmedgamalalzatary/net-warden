@@ -1,0 +1,67 @@
+<Window x:Class="NetWarden.Client.Dialogs.RuleEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:NetWarden.Client.ViewModels"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:RuleEditorViewModel}"
+        Title="{Binding Title}" Width="460" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="{StaticResource WindowBackground}" FontFamily="Segoe UI" FontSize="13">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <Style TargetType="TextBlock" x:Key="Label">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,6,12,6" />
+        </Style>
+    </Window.Resources>
+    <StackPanel Margin="16">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+            </Grid.RowDefinitions>
+
+            <TextBlock Text="For filter" Style="{StaticResource Label}" />
+            <ComboBox Grid.Column="1" ItemsSource="{Binding Filters}" SelectedItem="{Binding Filter}" DisplayMemberPath="Name" Margin="0,4" />
+
+            <TextBlock Grid.Row="1" Text="Rule type" Style="{StaticResource Label}" />
+            <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Kinds}" SelectedItem="{Binding Kind}" Margin="0,4" />
+
+            <TextBlock Grid.Row="2" Text="Direction" Style="{StaticResource Label}"
+                       ToolTip="Limits: In = download, Out = upload. Blocker: In = incoming connections, Out = outgoing." />
+            <ComboBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding Directions}" SelectedItem="{Binding Direction}" Margin="0,4" />
+
+            <TextBlock Grid.Row="3" Text="Limit (KB/s)" Style="{StaticResource Label}" Visibility="{Binding IsLimit, Converter={StaticResource BoolToVis}}" />
+            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding LimitKilobytes, UpdateSourceTrigger=PropertyChanged}" Margin="0,4" Padding="4,3"
+                     Visibility="{Binding IsLimit, Converter={StaticResource BoolToVis}}" />
+
+            <TextBlock Grid.Row="4" Text="Action" Style="{StaticResource Label}" Visibility="{Binding IsFirewall, Converter={StaticResource BoolToVis}}" />
+            <ComboBox Grid.Row="4" Grid.Column="1" ItemsSource="{Binding Actions}" SelectedItem="{Binding Action}" Margin="0,4"
+                      Visibility="{Binding IsFirewall, Converter={StaticResource BoolToVis}}" />
+
+            <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal" Margin="0,6"
+                        Visibility="{Binding IsIgnore, Converter={StaticResource BoolToVis}}">
+                <CheckBox Content="Ignore limit" IsChecked="{Binding IgnoreLimit}" Margin="0,0,16,0" />
+                <CheckBox Content="Ignore data (not counted in stats)" IsChecked="{Binding IgnoreData}" />
+            </StackPanel>
+
+            <TextBlock Grid.Row="6" Text="Weight" Style="{StaticResource Label}"
+                       ToolTip="0 = default: whole computer 1, zones 2, other filters 3. Higher weight wins." />
+            <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding Weight, UpdateSourceTrigger=PropertyChanged}" Margin="0,4" Padding="4,3" />
+
+            <TextBlock Grid.Row="7" Text="Notes" Style="{StaticResource Label}" />
+            <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding Notes, UpdateSourceTrigger=PropertyChanged}" Margin="0,4" Padding="4,3" />
+        </Grid>
+        <CheckBox Content="Enabled" IsChecked="{Binding IsEnabled}" Margin="0,8,0,0" />
+        <TextBlock Text="{Binding Error}" Foreground="{StaticResource BadBrush}" Margin="0,10,0,0" TextWrapping="Wrap" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Save" Width="90" Padding="0,4" IsDefault="True" Click="Save_Click" />
+            <Button Content="Cancel" Width="90" Padding="0,4" Margin="8,0,0,0" IsCancel="True" />
+        </StackPanel>
+    </StackPanel>
+</Window>

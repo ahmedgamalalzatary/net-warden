@@ -23,10 +23,10 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 1.6 Realtime traffic chart (DL/UL line chart, 1/5/10 min window, per selected app or whole computer)
 
 ## Phase 2 - Filters & rules engine
-- [ ] 2.1 Zones: Internet, Local network, Loopback, Forwarded
-- [ ] 2.2 Filters: app, path (wildcards), remote/local IP range, remote/local port range, protocol, domain name (wildcards), user, process id, network, tag; negation (is / is not)
-- [ ] 2.3 Filter types: Filter, Zone, Composite (base filters); per-type: none / per-app / per-process / per-connection
-- [ ] 2.4 Rule list: enable/disable, direction (in/out/both), weight/order, notes, rule state (active/inactive/disabled)
+- [x] 2.1 Zones: Internet, Local network, Loopback, Forwarded
+- [x] 2.2 Filters: app, path (wildcards), remote/local IP range, remote/local port range, protocol, domain name (wildcards), user, process id, tag; negation (is / is not). Network-based filters come with 10.3
+- [x] 2.3 Filter types: Filter, Zone, Composite (base filters); per-type: none / per-app / per-process / per-connection
+- [x] 2.4 Rule list: enable/disable, direction (in/out/both), weight/order, notes, rule state (active/inactive/disabled)
 
 ## Phase 3 - Blocker (firewall)
 - [ ] 3.1 Allow/Deny rules per filter, in/out
