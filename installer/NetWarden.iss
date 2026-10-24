@@ -50,6 +50,7 @@ Source: "{#Stage}\service\*"; DestDir: "{app}\service"; Excludes: "WinDivert.dll
 Source: "{#Stage}\service\WinDivert.dll"; DestDir: "{app}\service"
 Source: "{#Stage}\service\WinDivert64.sys"; DestDir: "{app}\service"
 Source: "..\third_party\WinDivert\LICENSE"; DestDir: "{app}\licenses"; DestName: "WinDivert-LICENSE.txt"
+Source: "..\third_party\GeoIP\LICENSE"; DestDir: "{app}\licenses"; DestName: "DB-IP-LICENSE.txt"
 
 [Icons]
 Name: "{group}\NetWarden"; Filename: "{app}\NetWarden.exe"

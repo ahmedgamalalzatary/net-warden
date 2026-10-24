@@ -46,6 +46,7 @@ public sealed partial class MainViewModel : ObservableObject
         Rules = new RulesViewModel(connection);
         Blocker = new BlockerViewModel(connection, Rules);
         Priorities = new PrioritiesViewModel(() => SettingsFromService, UpdateSettingsAsync);
+        Stats = new StatsViewModel(connection, settings, saveSettings, ports, () => SettingsFromService, UpdateSettingsAsync);
         Activity.Updated += () =>
         {
             OnPropertyChanged(nameof(ChartHistory));
@@ -55,6 +56,9 @@ public sealed partial class MainViewModel : ObservableObject
             // (every snapshot while the Priorities tab shows live rates).
             if ((++_ticks % 3 == 0 || IsPrioritiesTabVisible) && IsConnected)
                 _ = Blocker.LoadAsync();
+            // The service writes stats every minute; follow along while a range that includes now is shown.
+            if (IsStatsTabVisible && _ticks % StatsRefreshTicks == 0 && IsConnected && Stats.IsLive)
+                _ = Stats.RefreshAsync();
         };
         Rules.Reloaded += RefreshRuleStates;
         Blocker.PropertyChanged += (_, e) =>
@@ -72,9 +76,32 @@ public sealed partial class MainViewModel : ObservableObject
     public RulesViewModel Rules { get; }
     public BlockerViewModel Blocker { get; }
     public PrioritiesViewModel Priorities { get; }
+    public StatsViewModel Stats { get; }
+
+    /// <summary>The service, for dialogs that talk to it directly.</summary>
+    public IServiceRequester Service => _connection;
+
+    /// <summary>Activity snapshots (seconds) between refreshes of a live stats range.</summary>
+    public const int StatsRefreshTicks = 30;
 
     /// <summary>Set by the window while the Priorities tab is selected.</summary>
     public bool IsPrioritiesTabVisible { get; set; }
+
+    /// <summary>Set by the window while the Statistics tab is selected; showing it loads the stats.</summary>
+    public bool IsStatsTabVisible
+    {
+        get => _isStatsTabVisible;
+        set
+        {
+            if (_isStatsTabVisible == value)
+                return;
+            _isStatsTabVisible = value;
+            if (value && IsConnected)
+                _ = Stats.RefreshAsync();
+        }
+    }
+
+    private bool _isStatsTabVisible;
 
     public IReadOnlyList<PriorityLevel> PriorityLevels => QuickPriority.Levels;
 
@@ -229,6 +256,7 @@ public sealed partial class MainViewModel : ObservableObject
                      nameof(DefaultFirewallIn), nameof(DefaultFirewallOut) })
             OnPropertyChanged(name);
         Priorities.RefreshSettings();
+        Stats.RefreshSettings();
     }
 
     public bool IsConnected => ConnectionState == ConnectionState.Connected;
@@ -371,6 +399,8 @@ public sealed partial class MainViewModel : ObservableObject
             await Blocker.LoadAsync();
             if (await _connection.RequestAsync<ActivitySnapshot>(Methods.ActivityGet) is { } snapshot)
                 Activity.Apply(snapshot);
+            if (IsStatsTabVisible)
+                await Stats.RefreshAsync();
         }
         catch (Exception ex) when (ex is IpcDisconnectedException or IpcRemoteException)
         {

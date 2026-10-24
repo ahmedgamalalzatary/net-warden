@@ -53,6 +53,11 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
                 _savedRules.Add(r!);
                 return Task.FromResult(r!);
             })
+            .Register<StatsQuery, StatsResult>(Methods.StatsQuery, (q, _) =>
+            {
+                _statsQueries.Add(q!);
+                return Task.FromResult(StatsResult(q!));
+            })
             .Register(Methods.RulesGet, _ => Task.FromResult(new RulesSnapshot(1, PredefinedFilters.All,
                 PredefinedFilters.DefaultRules.Select(r => new RuleView(r, RuleState.Active, 2, "Local network")).ToList())));
         _server = new IpcServer(_pipe, dispatcher, NullLogger.Instance);
@@ -87,6 +92,23 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
             new(PriorityLevel.Critical, criticalRate, criticalRate > 0, null),
         ]);
         return new PriorityStatus(true, Direction(2_000_000, 500_000, 600_000, 80_000), Direction(500_000, 0, null, 0));
+    }
+
+    private readonly List<StatsQuery> _statsQueries = [];
+
+    /// <summary>A day of made-up traffic: busier in the evening, per hour bucket.</summary>
+    private static StatsResult StatsResult(StatsQuery q)
+    {
+        var points = new List<StatsPoint>();
+        for (var t = q.From; t < q.To && points.Count < 400; t = q.Bucket == StatsBucket.Minute ? t.AddMinutes(1) : t.AddHours(1))
+            points.Add(new StatsPoint(t, 40_000_000L + 9_000_000L * Math.Abs(12 - t.Hour) % 70_000_000, 4_000_000L + t.Hour * 150_000));
+        return new StatsResult(q.From, q.To, q.Bucket, points.Sum(p => p.In), points.Sum(p => p.Out), points,
+            Enumerable.Range(0, 24).Select(h => new StatsHour(h, 20_000_000L * (1 + (h + 6) % 24 / 3), 2_000_000L * (1 + h % 5))).ToList(),
+            q.GroupBy == StatsGroupBy.App
+                ? [new StatsRow("browser", "Browser", @"C:\Program Files\Browser\browser.exe", 900_000_000, 40_000_000),
+                   new StatsRow("game", "Game", @"D:\Games\game.exe", 300_000_000, 25_000_000)]
+                : [new StatsRow("142.250.74.110", "www.google.com", "142.250.74.110 · United States", 120_000_000, 9_000_000)],
+            false);
     }
 
     private DataGrid Grid => _window.ActivityGrid;
@@ -273,6 +295,52 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
         Assert.Equal(PriorityLevel.Low, low.Level);
         Assert.NotEqual("", low.DownloadCap);
         Assert.Contains("down", capacity);
+    }
+
+    [Theory]
+    [InlineData(AppTheme.Light)]
+    [InlineData(AppTheme.Dark)]
+    public async Task Statistics_tab_loads_when_shown_and_drills_into_an_app(AppTheme theme)
+    {
+        string? shots = Environment.GetEnvironmentVariable("NETWARDEN_SHOTS");
+        var (rows, bars, hours, drilled) = await wpf.RunAsync(async () =>
+        {
+            wpf.Themes.Apply(theme);
+            try
+            {
+                Assert.Empty(_statsQueries); // nothing is queried until the tab is shown
+                SelectTab("Statistics");
+                for (int i = 0; i < 50 && _vm.Stats.Rows.Count == 0; i++)
+                    await WpfHarness.Settle(30);
+                await WpfHarness.Settle();
+                if (shots is not null)
+                {
+                    _window.Width = 1360;
+                    await WpfHarness.Settle();
+                    ThemeTests.Save(_window, Path.Combine(shots, $"Statistics-{theme}.png"));
+                }
+                int gridRows = WpfHarness.Descendants<DataGridRow>(_window.StatsGrid).Count();
+                int chartBars = _window.StatsTimeChart.Bars?.Count ?? 0;
+                int hourBars = _window.StatsHourChart.Bars?.Count ?? 0;
+
+                _window.StatsGrid.SelectedIndex = 0;
+                _vm.Stats.DrillInto(_window.StatsGrid.SelectedItem as StatsRowView);
+                for (int i = 0; i < 50 && _vm.Stats.Rows.FirstOrDefault()?.Label != "www.google.com"; i++)
+                    await WpfHarness.Settle(30);
+                return (gridRows, chartBars, hourBars, _vm.Stats.Rows.Select(r => r.Label).ToList());
+            }
+            finally
+            {
+                wpf.Themes.Apply(AppTheme.Light);
+                wpf.Run(() => SelectTab("Activity"));
+            }
+        });
+
+        Assert.Equal(2, rows);
+        Assert.Equal(24, bars); // Today, per hour
+        Assert.Equal(24, hours);
+        Assert.Equal(["www.google.com"], drilled);
+        Assert.Equal(("browser", StatsGroupBy.Host), (_statsQueries[^1].AppId, _statsQueries[^1].GroupBy));
     }
 
     [Fact]

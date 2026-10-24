@@ -37,6 +37,12 @@ public sealed class TrafficMonitor
 
     public ActivitySnapshot? Latest { get; private set; }
 
+    /// <summary>
+    /// Raised at the end of every tick with the bytes each flow moved since the previous tick
+    /// (flows of unknown apps are left out). Runs inside the tick, so handlers must be quick.
+    /// </summary>
+    public event Action<IReadOnlyList<FlowTraffic>>? TrafficRecorded;
+
     public void Record(in TrafficEvent e)
     {
         FlowKey key = FlowKey.For(e.ProcessId, e.Protocol, e.LocalAddress, e.LocalPort, e.RemoteAddress, e.RemotePort);
@@ -100,6 +106,7 @@ public sealed class TrafficMonitor
                 flow.Socket = s;
             }
 
+            List<FlowTraffic>? recorded = TrafficRecorded is null ? null : new(pending.Count);
             foreach (var (key, delta) in pending)
             {
                 Flow flow = GetFlow(key);
@@ -115,6 +122,7 @@ public sealed class TrafficMonitor
                     AppTotals totals = GetApp(app);
                     totals.TotalIn += delta.In;
                     totals.TotalOut += delta.Out;
+                    recorded?.Add(ToTraffic(key, flow, app, delta, listening, now));
                 }
             }
 
@@ -145,6 +153,8 @@ public sealed class TrafficMonitor
                     _pidApps.Remove(pid);
 
             Latest = BuildSnapshot(now, listening);
+            if (recorded is { Count: > 0 })
+                TrafficRecorded?.Invoke(recorded);
             return Latest;
         }
     }
@@ -235,6 +245,24 @@ public sealed class TrafficMonitor
             flow.RateIn, flow.RateOut, flow.TotalIn, flow.TotalOut);
     }
 
+    private static FlowTraffic ToTraffic(FlowKey key, Flow flow, AppInfo app, Pending delta,
+        HashSet<(int Pid, int Port)> listening, DateTimeOffset now)
+    {
+        if (key.Protocol == TransportProtocol.Udp)
+        {
+            IPEndPoint? remote = delta.LastRemote ?? flow.LastRemote;
+            return new FlowTraffic(app, key.ProcessId, key.Protocol, ConnectionKind.Listen,
+                flow.Socket?.LocalAddress ?? IPAddress.Any, key.LocalPort, remote?.Address, remote?.Port ?? 0,
+                delta.In, delta.Out, now);
+        }
+        ConnectionKind kind = flow.Socket?.State == TcpState.Listen ? ConnectionKind.Listen
+            : listening.Contains((key.ProcessId, key.LocalPort)) ? ConnectionKind.Accept
+            : ConnectionKind.Connect;
+        return new FlowTraffic(app, key.ProcessId, key.Protocol, kind,
+            key.LocalAddress ?? flow.EtwLocal ?? IPAddress.Any, key.LocalPort, key.RemoteAddress, key.RemotePort,
+            delta.In, delta.Out, now);
+    }
+
     private Flow GetFlow(FlowKey key)
     {
         if (!_flows.TryGetValue(key, out Flow? flow))
@@ -323,3 +351,17 @@ public sealed class TrafficMonitor
         public long TotalOut;
     }
 }
+
+/// <summary>Bytes one flow moved during one tick. <see cref="RemoteAddress"/> is null for listening sockets.</summary>
+public sealed record FlowTraffic(
+    AppInfo App,
+    int ProcessId,
+    TransportProtocol Protocol,
+    ConnectionKind Kind,
+    IPAddress LocalAddress,
+    int LocalPort,
+    IPAddress? RemoteAddress,
+    int RemotePort,
+    long In,
+    long Out,
+    DateTimeOffset Time);

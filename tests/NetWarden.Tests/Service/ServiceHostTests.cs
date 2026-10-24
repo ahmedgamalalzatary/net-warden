@@ -1,6 +1,7 @@
 using NetWarden.Service;
 using NetWarden.Shared.Contracts;
 using NetWarden.Shared.Ipc;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace NetWarden.Tests.Service;
@@ -43,7 +44,7 @@ public sealed class ServiceHostTests : IAsyncLifetime
 
         Assert.NotNull(info);
         Assert.Equal(Environment.ProcessId, info.ProcessId);
-        Assert.Equal("0.5.0", info.Version);
+        Assert.Equal("0.6.0", info.Version);
         Assert.False(info.IsWindowsService);
         Assert.Equal(Environment.MachineName, info.MachineName);
         Assert.True(info.StartedAt <= DateTimeOffset.UtcNow);
@@ -214,5 +215,60 @@ public sealed class ServiceHostTests : IAsyncLifetime
         await _host.StopAsync();
 
         await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private void RecordTraffic(long bytesIn, DateTimeOffset time)
+    {
+        var recorder = _host.Services.GetRequiredService<NetWarden.Core.Stats.StatsRecorder>();
+        var app = new AppInfo(@"c:\apps\game.exe", AppKind.Desktop, @"c:\apps\game.exe", "Game", null, null, null, [], null);
+        recorder.Add([new NetWarden.Core.Monitoring.FlowTraffic(app, Environment.ProcessId, TransportProtocol.Tcp, ConnectionKind.Connect,
+            System.Net.IPAddress.Parse("192.168.1.2"), 50000, System.Net.IPAddress.Parse("8.8.8.8"), 443, bytesIn, 10, time)]);
+    }
+
+    [Fact]
+    public async Task Stats_round_trip_over_ipc()
+    {
+        var now = DateTimeOffset.UtcNow;
+        RecordTraffic(1234, now);
+        var query = new StatsQuery(now.AddHours(-1), now.AddMinutes(1), StatsBucket.Minute, StatsGroupBy.Country,
+            TimeZoneId: TimeZoneInfo.Local.Id);
+
+        // Collected traffic is written before the query runs.
+        var result = await _client.RequestAsync<StatsResult>(Methods.StatsQuery, query);
+        Assert.Equal(1234, result!.TotalIn);
+        Assert.Equal(10, result.TotalOut);
+        Assert.Equal(("US", 1234L), (result.Rows[0].Key, result.Rows[0].In));
+        Assert.Equal(1234, result.Series.Sum(p => p.In));
+
+        var info = await _client.RequestAsync<StatsInfo>(Methods.StatsInfo);
+        Assert.Equal((1L, 1), (info!.Records, info.Apps));
+        Assert.Equal(_dir.File("stats.db"), info.Path);
+        Assert.NotNull(info.GeoDatabaseDate);
+
+        Assert.Equal(1, await _client.RequestAsync<long>(Methods.StatsDelete, new StatsDeleteRequest(AppId: @"c:\apps\game.exe")));
+        var compacted = await _client.RequestAsync<StatsInfo>(Methods.StatsCompact);
+        Assert.Equal((0L, 0), (compacted!.Records, compacted.Apps));
+    }
+
+    [Fact]
+    public async Task Stats_query_rejects_an_empty_range()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var ex = await Assert.ThrowsAsync<IpcRemoteException>(() => _client.RequestAsync<StatsResult>(Methods.StatsQuery,
+            new StatsQuery(now, now, StatsBucket.Hour, StatsGroupBy.App)));
+        Assert.Contains("after its start", ex.RemoteMessage);
+    }
+
+    [Fact]
+    public async Task Collected_stats_are_written_when_the_service_stops()
+    {
+        var now = DateTimeOffset.UtcNow;
+        RecordTraffic(77, now);
+
+        await _host.StopAsync();
+        _host.Services.GetRequiredService<NetWarden.Core.Stats.StatsDatabase>().Dispose();
+
+        using var db = new NetWarden.Core.Stats.StatsDatabase(_dir.File("stats.db"));
+        Assert.Equal(1, db.Info(null).Records);
     }
 }

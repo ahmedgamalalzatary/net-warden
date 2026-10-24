@@ -53,5 +53,8 @@ public sealed class SettingsService
             p.MinDownloadBytesPerSecond = p.MaxDownloadBytesPerSecond;
         if (p.MaxUploadBytesPerSecond > 0 && p.MinUploadBytesPerSecond > p.MaxUploadBytesPerSecond)
             p.MinUploadBytesPerSecond = p.MaxUploadBytesPerSecond;
+
+        var stats = settings.Stats ??= new StatsSettings();
+        stats.SaveIntervalSeconds = Math.Clamp(stats.SaveIntervalSeconds, StatsSettings.MinSaveIntervalSeconds, StatsSettings.MaxSaveIntervalSeconds);
     }
 }

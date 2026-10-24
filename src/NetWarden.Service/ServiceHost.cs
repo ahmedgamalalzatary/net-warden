@@ -5,6 +5,7 @@ using NetWarden.Core.Ipc;
 using NetWarden.Core.Monitoring;
 using NetWarden.Core.Packets;
 using NetWarden.Core.Rules;
+using NetWarden.Core.Stats;
 using NetWarden.Shared.Contracts;
 using NetWarden.Shared.Ipc;
 using NetWarden.Shared.Storage;
@@ -106,6 +107,17 @@ public static class ServiceHost
         services.AddSingleton<PacketDeviceFactory>(_ => (filter, priority) => new WinDivertDevice(filter, priority));
         services.AddSingleton<PacketFilterService>();
 
+        // Statistics
+        services.AddSingleton(sp => CountryLookup.LoadDefault(ex =>
+            sp.GetRequiredService<ILogger<StatsService>>().LogError(ex, "Country database could not be read.")));
+        services.AddSingleton(sp => new StatsDatabase(Path.Combine(Options(sp).ResolveDataDirectory(), "stats.db")));
+        services.AddSingleton(sp => new StatsRecorder(
+            () => sp.GetRequiredService<RuleRepository>().Current,
+            () => sp.GetRequiredService<SettingsService>().Current,
+            sp.GetRequiredService<FlowContextFactory>(),
+            sp.GetRequiredService<ZoneClassifier>()));
+        services.AddSingleton<StatsService>();
+
         // IPC
         services.AddSingleton(ServiceMethods.Create);
         services.AddSingleton(sp => new IpcServer(
@@ -118,6 +130,7 @@ public static class ServiceHost
         services.AddHostedService<ActivityService>();
         services.AddHostedService<RulesService>();
         services.AddHostedService(sp => sp.GetRequiredService<PacketFilterService>());
+        services.AddHostedService(sp => sp.GetRequiredService<StatsService>());
 
         configureServices?.Invoke(services);
 

@@ -26,6 +26,11 @@ public static class Methods
     public const string FilterStatus = "packetfilter.status";
     public const string BlockerPending = "blocker.pending";
     public const string BlockerAnswer = "blocker.answer";
+
+    public const string StatsQuery = "stats.query";
+    public const string StatsInfo = "stats.info";
+    public const string StatsDelete = "stats.delete";
+    public const string StatsCompact = "stats.compact";
 }
 
 /// <summary>Event names pushed by the service to every client.</summary>

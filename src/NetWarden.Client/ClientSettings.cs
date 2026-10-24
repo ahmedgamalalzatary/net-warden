@@ -28,4 +28,7 @@ public sealed class ClientSettings
     public bool ShowInfoPane { get; set; } = true;
     public bool ShowChart { get; set; } = true;
     public NetWarden.Client.Services.AppTheme Theme { get; set; } = NetWarden.Client.Services.AppTheme.System;
+
+    public NetWarden.Client.ViewModels.StatsRange StatsRange { get; set; } = NetWarden.Client.ViewModels.StatsRange.Today;
+    public NetWarden.Shared.Contracts.StatsGroupBy StatsGroupBy { get; set; } = NetWarden.Shared.Contracts.StatsGroupBy.App;
 }

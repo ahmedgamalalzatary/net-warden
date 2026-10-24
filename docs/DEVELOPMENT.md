@@ -13,7 +13,8 @@
 | `src/NetWarden.Service` | Windows service host (also runs as a console app) |
 | `src/NetWarden.Client` | WPF desktop client |
 | `tests/NetWarden.Tests` | xUnit tests (unit, in-process service host, real WPF window via `WpfHarness`, opt-in E2E) |
-| `scripts/` | Service install/uninstall |
+| `scripts/` | Service install/uninstall, release build, icon, country database (`update-geoip.py`) |
+| `third_party/` | WinDivert 2.2.2; `GeoIP/country.bin.gz` (DB-IP Lite, CC BY 4.0) |
 
 ## Architecture
 ```
@@ -31,6 +32,8 @@ NetWarden.Service (LocalSystem)
         |                       -> PacketFilter (WinDivert, priority 0)   -> Limiter (token buckets)
         |                                                                   + PriorityScheduler (per direction)
         |                                                                   + LimiterPump (sends due packets)
+        |-- StatsService: TrafficMonitor.TrafficRecorded -> StatsRecorder (per-minute records)
+        |       -> StatsDatabase  %ProgramData%\NetWarden\stats.db (SQLite), written every 60 s
         '-- SettingsService  %ProgramData%\NetWarden\settings.json (+ .bak)
 ```
 The pipe only admits Administrators and SYSTEM, so the client requires elevation.
@@ -74,6 +77,10 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 | `packetfilter.status` | - | `PacketFilterStatus` (blocker counters + `Limiter`: delayed, dropped, queued bytes, `Priorities`) |
 | `blocker.pending` | - | `BlockerRequest[]` |
 | `blocker.answer` | `BlockerAnswer` | `true` if the request was still pending |
+| `stats.query` | `StatsQuery` | `StatsResult` (totals, series, 24 hours, breakdown) |
+| `stats.info` | - | `StatsInfo` (file, size, records, apps, first/last, geo database date) |
+| `stats.delete` | `StatsDeleteRequest` (from / to / app, all optional) | number of records deleted |
+| `stats.compact` | - | `StatsInfo` after roll-up, cleanup and VACUUM |
 
 | Event | Payload |
 |---|---|
@@ -125,7 +132,7 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 - The pump thread uses a 1 ms timer resolution while running. Stopping sends what is still queued.
 - Measured: 200 KB/s download limit -> curl 199 KB/s; 100 KB/s E2E test passes against the installed service.
 - Ignore rules: "ignore limit" is applied by the rule engine; "ignore data" is exposed on
-  `FlowDecision.IgnoreData` for statistics and quotas (phases 6 and 7) to skip that traffic.
+  `FlowDecision.IgnoreData`; statistics skip that traffic (and quotas will, phase 7).
 
 ## Priority notes
 - Rule kind `Priority` with a level (Low / Normal / High / Critical) per direction; the first matching
@@ -148,6 +155,30 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
   squeezed rate was 0.94x-1.42x of the expected share; the stream kept 300-320 KB/s.
 - The priority E2E test downloads ~30 MB at full line speed from Hetzner's public test file (Cloudflare's
   speed test answers 429 to repeated large downloads; the test returns early on a refused download).
+
+## Statistics notes
+- `TrafficMonitor.Tick()` raises `TrafficRecorded` with each flow's bytes since the last tick (known apps only).
+  `StatsRecorder` adds them up per (minute, app, remote address, service port, protocol, zone, user SID).
+- Skipped: zones the Save toggles leave out (default: Internet and Local network on, Loopback off), flows an
+  "ignore data" rule matches, and everything while `IsStatsEnabled` is off. Facts about a flow (zone, DNS name,
+  user, ignore-data) are cached for 60 s or until the rules generation changes.
+- Service port: the remote port of outgoing TCP, the local port of incoming TCP, the lower port for UDP.
+- `StatsService` writes the collected records every `Stats.SaveIntervalSeconds` (60, clamped 10-3600) and on
+  stop; every query, info, delete and compact writes first, so the view always includes the current minute.
+- `stats.db` schema: `traffic(slot, app, host, port, protocol, zone, user, bytes_in, bytes_out)` (WITHOUT ROWID,
+  upsert adds bytes) plus `apps`, `hosts` (address + last known DNS name) and `users` lookup tables.
+  `slot` = Unix seconds of the minute. Minutes older than 48 h are rolled up into UTC hours once an hour,
+  so ranges older than two days are hour-accurate (for zones with a half-hour offset, to the UTC hour).
+- Queries bucket in the client's time zone (`StatsQuery.TimeZoneId`): minute / hour / day / calendar month.
+  More than 5000 buckets widens the bucket. The 24-hour histogram uses the same zone.
+- Countries: `CountryLookup` loads `country.bin.gz` (next to the service; ~2 MB, ~710k ranges) and binary-searches
+  it; IPv6 by its top 64 bits. Private and unknown addresses have no country. Rebuild with
+  `python scripts/update-geoip.py` (downloads the current month from db-ip.com). The attribution is shown in the
+  stats manager and installed to `licenses\DB-IP-LICENSE.txt`.
+- Client: Statistics tab (`StatsViewModel`) loads when shown and refreshes every 30 s while the range includes
+  now. Double-clicking an app narrows the view to it and lists its hosts. CSV exports carry raw bytes, a BOM
+  for Excel, and a leading `'` on text a spreadsheet would treat as a formula.
+- Live check: `StatsLiveTests` (admin) sends 500 KB over loopback through real ETW and finds it in `stats.query`.
 
 ## Rules semantics
 - Filter = AND of functions; a function matches if any of its values matches; "is not" negates.

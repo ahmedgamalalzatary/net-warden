@@ -1,0 +1,9 @@
+country.bin.gz is derived from the DB-IP "IP to Country Lite" database.
+
+IP Geolocation by DB-IP (https://db-ip.com)
+
+The DB-IP Lite databases are licensed under the Creative Commons Attribution 4.0
+International License: https://creativecommons.org/licenses/by/4.0/
+
+Changes: the CSV was converted to a compact binary format (adjacent ranges merged,
+IPv6 reduced to the top 64 bits) by scripts/update-geoip.py.

@@ -18,6 +18,8 @@ public sealed class ServiceSettings
     public FirewallAction DefaultFirewallOut { get; set; } = FirewallAction.Allow;
 
     public PrioritySettings Priorities { get; set; } = new();
+
+    public StatsSettings Stats { get; set; } = new();
 }
 
 public enum ReactionSpeed

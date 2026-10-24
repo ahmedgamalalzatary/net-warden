@@ -44,7 +44,7 @@ Write-Host 'Publishing service (self-contained)...'
 dotnet publish (Join-Path $repo 'src\NetWarden.Service') -c Release -r win-x64 --self-contained true `
     -p:DebugType=none -o (Join-Path $stage 'service') --nologo -v q
 if ($LASTEXITCODE -ne 0) { throw "Service publish failed ($LASTEXITCODE)." }
-foreach ($f in 'WinDivert.dll', 'WinDivert64.sys', 'NetWarden.Service.exe') {
+foreach ($f in 'WinDivert.dll', 'WinDivert64.sys', 'NetWarden.Service.exe', 'e_sqlite3.dll', 'country.bin.gz') {
     if (-not (Test-Path (Join-Path $stage "service\$f"))) { throw "Service publish is missing $f." }
 }
 

@@ -47,10 +47,10 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 5.2 Bandwidth reservation %, adaptive allocation, reaction speed, min/max bandwidth (Priorities tab with live status)
 
 ## Phase 6 - Statistics
-- [ ] 6.1 Stats database (SQLite), periodic save, save Internet/Local/Loopback toggles
-- [ ] 6.2 Stats view: time ranges (hour, today, week, month, year, custom), 24h histogram, time chart
-- [ ] 6.3 Breakdown by apps, IPs/domains, ports, countries, users; filter by zone/protocol/network
-- [ ] 6.4 Export CSV; stats manager (DB info, delete by time, delete per app, compact)
+- [x] 6.1 Stats database (SQLite), periodic save, save Internet/Local/Loopback toggles
+- [x] 6.2 Stats view: time ranges (hour, today, week, month, year, custom), 24h histogram, time chart
+- [x] 6.3 Breakdown by apps, IPs/domains, ports, countries, users; filter by zone/protocol. Network filter comes with 10.3
+- [x] 6.4 Export CSV; stats manager (DB info, delete by time, delete per app, compact)
 
 ## Phase 7 - Quotas
 - [ ] 7.1 Quota rules: data cap per filter, in/out, reset period

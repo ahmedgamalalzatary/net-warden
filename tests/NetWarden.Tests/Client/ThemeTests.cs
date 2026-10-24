@@ -5,6 +5,7 @@ using NetWarden.Client.Dialogs;
 using NetWarden.Client.Services;
 using NetWarden.Client.ViewModels;
 using NetWarden.Shared.Contracts;
+using NetWarden.Shared.Ipc;
 
 namespace NetWarden.Tests.Client;
 
@@ -77,6 +78,7 @@ public sealed class ThemeTests(WpfHarness wpf)
                     new RuleEditorWindow(new RuleEditorViewModel(null, PredefinedFilters.All, PredefinedFilters.Internet), _ => Task.FromResult<string?>(null)),
                     new RuleEditorWindow(new RuleEditorViewModel(null, PredefinedFilters.All, PredefinedFilters.Internet, RuleKind.Priority), _ => Task.FromResult<string?>(null)),
                     new BlockerPromptWindow(new BlockerPromptViewModel(blocker)),
+                    new StatsManagerWindow(new StatsManagerViewModel(StatsService())),
                 ];
                 foreach (var window in windows)
                 {
@@ -93,6 +95,18 @@ public sealed class ThemeTests(WpfHarness wpf)
             }
         });
     }
+
+    private static FakeService StatsService() => new()
+    {
+        Handler = (method, _) => method switch
+        {
+            Methods.StatsInfo => new StatsInfo(@"C:\ProgramData\NetWarden\stats.db", 3_500_000, 48_210, 37,
+                DateTimeOffset.Now.AddDays(-40), DateTimeOffset.Now, "2026-10"),
+            Methods.StatsQuery => new StatsResult(default, default, StatsBucket.Month, 0, 0, [], [],
+                [new StatsRow("browser", "Browser", null, 3_000_000_000, 100_000_000)], false),
+            _ => null,
+        },
+    };
 
     internal static void Save(Window window, string path)
     {

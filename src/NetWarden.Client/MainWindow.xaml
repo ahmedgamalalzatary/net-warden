@@ -524,6 +524,157 @@
             </ScrollViewer>
         </TabItem>
 
+        <!-- Statistics -->
+        <TabItem x:Name="StatsTab" Header="Statistics" Padding="14,4">
+            <DockPanel Margin="8" DataContext="{Binding Stats}">
+                <!-- What is recorded -->
+                <Border DockPanel.Dock="Top" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="14,8" Margin="0,0,0,8"
+                        IsEnabled="{Binding DataContext.IsConnected, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Manage database..." Padding="10,3" Click="StatsManager_Click" />
+                        <StackPanel Orientation="Horizontal">
+                            <CheckBox Content="Record statistics" IsChecked="{Binding IsStatsEnabled}" FontWeight="SemiBold" VerticalAlignment="Center"
+                                      ToolTip="Write traffic to the stats database (per minute; older than 2 days per hour)" />
+                            <TextBlock Text="Save:" Margin="28,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
+                            <CheckBox Content="Internet" IsChecked="{Binding SaveInternet}" Margin="12,0,0,0" />
+                            <CheckBox Content="Local network" IsChecked="{Binding SaveLocalNetwork}" Margin="12,0,0,0" />
+                            <CheckBox Content="Loopback" IsChecked="{Binding SaveLoopback}" Margin="12,0,0,0"
+                                      ToolTip="Traffic between programs on this computer" />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- Time range -->
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" LastChildFill="False">
+                    <ComboBox Width="96" ItemsSource="{Binding Ranges}" SelectedItem="{Binding Range}" />
+                    <Button Content="◀" Padding="8,3" Margin="8,0,0,0" Command="{Binding PreviousCommand}"
+                            IsEnabled="{Binding CanStep}" ToolTip="Previous period" />
+                    <Button Content="▶" Padding="8,3" Margin="4,0,0,0" Command="{Binding NextCommand}"
+                            IsEnabled="{Binding CanGoForward}" ToolTip="Next period" />
+                    <StackPanel Orientation="Horizontal" Margin="8,0,0,0" Visibility="{Binding IsCustom, Converter={StaticResource BoolToVis}}">
+                        <DatePicker SelectedDate="{Binding CustomFrom}" Width="130" />
+                        <TextBlock Text="to" Margin="6,0" VerticalAlignment="Center" />
+                        <DatePicker SelectedDate="{Binding CustomTo}" Width="130" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding RangeTitle}" FontWeight="SemiBold" FontSize="14" Margin="14,0,0,0" VerticalAlignment="Center" />
+                    <Menu DockPanel.Dock="Right" VerticalAlignment="Center" Background="Transparent" Margin="8,0,0,0">
+                        <MenuItem Header="Export ▾" Padding="6,3">
+                            <MenuItem Header="Breakdown as CSV..." Click="StatsExportRows_Click" />
+                            <MenuItem Header="Time chart as CSV..." Click="StatsExportSeries_Click" />
+                        </MenuItem>
+                    </Menu>
+                    <Button DockPanel.Dock="Right" Content="Refresh" Padding="10,3" Command="{Binding RefreshCommand}"
+                            IsEnabled="{Binding DataContext.IsConnected, RelativeSource={RelativeSource AncestorType=Window}}" />
+                </DockPanel>
+
+                <!-- Filters -->
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False">
+                    <TextBlock Text="Zones:" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
+                    <CheckBox Content="Internet" IsChecked="{Binding ShowInternet}" Margin="8,0,0,0" />
+                    <CheckBox Content="Local network" IsChecked="{Binding ShowLocalNetwork}" Margin="12,0,0,0" />
+                    <CheckBox Content="Loopback" IsChecked="{Binding ShowLoopback}" Margin="12,0,0,0" />
+                    <TextBlock Text="Protocol:" Margin="20,0,6,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
+                    <ComboBox Width="70" ItemsSource="{Binding Protocols}" SelectedItem="{Binding Protocol}" />
+                    <Border Margin="16,0,0,0" Padding="8,2,4,2" CornerRadius="10" Background="{DynamicResource SelectionBackground}"
+                            Visibility="{Binding HasAppFilter, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding AppFilterText}" VerticalAlignment="Center" />
+                            <Button Content="✕" Padding="5,0" Margin="6,0,0,0" Command="{Binding ClearAppFilterCommand}"
+                                    Background="Transparent" BorderThickness="0" ToolTip="Show all apps" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding TotalsText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding LastError}" Foreground="{DynamicResource BadBrush}"
+                               Margin="0,0,16,0" VerticalAlignment="Center" />
+                </DockPanel>
+
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="200" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="320" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Time chart -->
+                    <Border Grid.ColumnSpan="2" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,8">
+                        <DockPanel>
+                            <DockPanel DockPanel.Dock="Top">
+                                <TextBlock Text="Transferred" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Rectangle Width="10" Height="10" Fill="{DynamicResource ChartInBrush}" VerticalAlignment="Center" />
+                                    <TextBlock Text="Download" Margin="4,0,12,0" Foreground="{DynamicResource MutedText}" />
+                                    <Rectangle Width="10" Height="10" Fill="{DynamicResource ChartOutBrush}" VerticalAlignment="Center" />
+                                    <TextBlock Text="Upload" Margin="4,0,0,0" Foreground="{DynamicResource MutedText}" />
+                                </StackPanel>
+                            </DockPanel>
+                            <charts:StatsChart x:Name="StatsTimeChart" Bars="{Binding Bars}"
+                                               InBrush="{DynamicResource ChartInBrush}" OutBrush="{DynamicResource ChartOutBrush}"
+                                               GridBrush="{DynamicResource ChartGridBrush}" LabelBrush="{DynamicResource MutedText}"
+                                               HighlightBrush="{DynamicResource SelectionBackground}" />
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Breakdown -->
+                    <DockPanel Grid.Row="1">
+                        <DockPanel DockPanel.Dock="Top" Margin="2,0,0,6">
+                            <TextBlock Text="By" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <ComboBox Width="90" Margin="8,0,0,0" ItemsSource="{Binding GroupBys}" SelectedItem="{Binding GroupBy}" />
+                            <TextBlock Text="{Binding FooterText}" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
+                            <TextBlock Text="Double-click an app to see its hosts" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource DimText}" />
+                        </DockPanel>
+                        <DataGrid x:Name="StatsGrid" ItemsSource="{Binding Rows}" AutoGenerateColumns="False" IsReadOnly="True"
+                                  SelectionMode="Single" HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="24"
+                                  Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
+                                  AlternatingRowBackground="{DynamicResource AltRowBackground}"
+                                  MouseDoubleClick="StatsGrid_MouseDoubleClick">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Name" Binding="{Binding Label}" Width="*" MinWidth="160" />
+                                <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="230" MinWidth="80" />
+                                <DataGridTextColumn Header="Download" Binding="{Binding In}" SortMemberPath="Row.In" Width="95" MinWidth="70"
+                                                    ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Upload" Binding="{Binding Out}" SortMemberPath="Row.Out" Width="95" MinWidth="70"
+                                                    ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTextColumn Header="Total" Binding="{Binding Total}" SortMemberPath="TotalBytes" Width="95" MinWidth="70"
+                                                    ElementStyle="{StaticResource NumberCell}" />
+                                <DataGridTemplateColumn Header="Share" SortMemberPath="TotalBytes" Width="90" MinWidth="60">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ProgressBar Value="{Binding Share, Mode=OneWay}" Maximum="1" Height="6" Margin="6,0"
+                                                         VerticalAlignment="Center" Foreground="{DynamicResource ChartInBrush}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+
+                    <!-- Time of day: fills the row up to 260 px, top-aligned -->
+                    <Grid Grid.Row="1" Grid.Column="1" Width="380" Margin="8,0,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" MaxHeight="260" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                    <Border Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="10,6">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="By hour of day" FontWeight="SemiBold" />
+                            <charts:StatsChart x:Name="StatsHourChart" Bars="{Binding HourBars}"
+                                               InBrush="{DynamicResource ChartInBrush}" OutBrush="{DynamicResource ChartOutBrush}"
+                                               GridBrush="{DynamicResource ChartGridBrush}" LabelBrush="{DynamicResource MutedText}"
+                                               HighlightBrush="{DynamicResource SelectionBackground}" />
+                        </DockPanel>
+                    </Border>
+                    </Grid>
+                </Grid>
+            </DockPanel>
+        </TabItem>
+
         <!-- Filters -->
         <TabItem Header="Filters" Padding="14,4">
             <DockPanel Margin="8">

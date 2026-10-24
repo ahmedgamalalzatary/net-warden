@@ -27,7 +27,10 @@ public partial class MainWindow : Window
         Tabs.SelectionChanged += (_, e) =>
         {
             if (e.OriginalSource == Tabs && ViewModel is { } vm)
+            {
                 vm.IsPrioritiesTabVisible = Tabs.SelectedItem == PrioritiesTab;
+                vm.IsStatsTabVisible = Tabs.SelectedItem == StatsTab;
+            }
         };
     }
 
@@ -222,6 +225,48 @@ public partial class MainWindow : Window
     {
         if (!string.IsNullOrEmpty(message))
             MessageBox.Show(this, message, "NetWarden", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    // ----- Statistics -----
+
+    private void StatsManager_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+            return;
+        var manager = new StatsManagerWindow(new StatsManagerViewModel(vm.Service)) { Owner = this };
+        manager.Changed += () => _ = vm.Stats.RefreshAsync();
+        manager.ShowDialog();
+    }
+
+    private void StatsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e) =>
+        ViewModel?.Stats.DrillInto(StatsGrid.SelectedItem as StatsRowView);
+
+    private void StatsExportRows_Click(object sender, RoutedEventArgs e) =>
+        ExportCsv(vm => vm.Stats.ExportFileName(vm.Stats.GroupBy.ToString().ToLowerInvariant()), vm => vm.Stats.RowsCsv());
+
+    private void StatsExportSeries_Click(object sender, RoutedEventArgs e) =>
+        ExportCsv(vm => vm.Stats.ExportFileName("traffic"), vm => vm.Stats.SeriesCsv());
+
+    private void ExportCsv(Func<MainViewModel, string> fileName, Func<MainViewModel, string> csv)
+    {
+        if (ViewModel is not { } vm)
+            return;
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            FileName = fileName(vm),
+            DefaultExt = ".csv",
+            Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+        try
+        {
+            StatsViewModel.WriteCsv(dialog.FileName, csv(vm));
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+        {
+            ShowError(ex.Message);
+        }
     }
 
     // ----- Blocker -----

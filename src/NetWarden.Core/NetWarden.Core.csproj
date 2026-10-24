@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="4.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
   </ItemGroup>
@@ -20,6 +21,8 @@
     <!-- WinDivert 2.2.2 (LGPL v3), x64. The driver is loaded by WinDivert.dll on first open. -->
     <None Include="..\..\third_party\WinDivert\WinDivert.dll" Link="WinDivert.dll" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\third_party\WinDivert\WinDivert64.sys" Link="WinDivert64.sys" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Country database (DB-IP Lite, CC BY 4.0), built by scripts/update-geoip.py. -->
+    <None Include="..\..\third_party\GeoIP\country.bin.gz" Link="country.bin.gz" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

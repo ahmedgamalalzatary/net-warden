@@ -46,6 +46,13 @@ public static class ServiceMethods
             .Register(Methods.BlockerPending, _ => Task.FromResult(blocker.Pending))
             .Register<BlockerAnswer, bool>(Methods.BlockerAnswer, (a, _) =>
                 Task.FromResult(Filter().Answer(a ?? throw new ArgumentException("Answer required."))));
+
+        var stats = sp.GetRequiredService<StatsService>();
+        dispatcher
+            .Register<StatsQuery, StatsResult>(Methods.StatsQuery, (q, _) => Task.Run(() => stats.Query(Require(q))))
+            .Register(Methods.StatsInfo, _ => Task.Run(stats.Info))
+            .Register<StatsDeleteRequest, long>(Methods.StatsDelete, (r, _) => Task.Run(() => stats.Delete(Require(r))))
+            .Register(Methods.StatsCompact, _ => Task.Run(stats.Compact));
         return dispatcher;
     }
 
