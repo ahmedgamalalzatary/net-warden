@@ -34,6 +34,10 @@ public partial class MainWindow : Window
                 vm.IsQuotasTabVisible = Tabs.SelectedItem == QuotasTab;
                 vm.IsLogTabVisible = Tabs.SelectedItem == LogTab;
                 vm.IsHistoryTabVisible = Tabs.SelectedItem == HistoryTab;
+                if (Tabs.SelectedItem == AppsTab && vm.IsConnected)
+                    _ = vm.Apps.RefreshAsync();
+                if (Tabs.SelectedItem == NetworksTab && vm.IsConnected)
+                    _ = vm.Networks.RefreshAsync();
                 if (vm.IsLogTabVisible && vm.IsConnected)
                     _ = vm.Log.RefreshAsync();
             }
@@ -236,6 +240,62 @@ public partial class MainWindow : Window
         if (!string.IsNullOrEmpty(message))
             MessageBox.Show(this, message, "NetWarden", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
+
+    // ----- Apps and networks -----
+
+    private async void DeleteApp_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { Apps.Selected: { } row } vm)
+            return;
+        var answer = MessageBox.Show(this, $"Forget {row.Name}? Choose Yes to delete its statistics too. Its rules stay.", "Delete app",
+            MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        if (answer != MessageBoxResult.Cancel)
+            await vm.Apps.DeleteAsync(row, answer == MessageBoxResult.Yes);
+    }
+
+    private async void AddRuleForTag_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { Apps.SelectedTag: { } tag } vm)
+            return;
+        await OpenRuleEditorForAsync(vm, $"Tag {tag}", new FilterFunction(FilterFunctionKind.Tag, true, [tag]));
+    }
+
+    private async void AddRuleForNetwork_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { Networks.Selected: { } row } vm)
+            return;
+        await OpenRuleEditorForAsync(vm, $"Network {row.Name}", new FilterFunction(FilterFunctionKind.Network, true, [row.Network.Id]));
+    }
+
+    private async Task OpenRuleEditorForAsync(MainViewModel vm, string name, FilterFunction function)
+    {
+        if (await vm.Rules.EnsureFilterAsync(name, [function]) is { } filter)
+            OpenRuleEditor(null, filter.Id);
+        else
+            ShowError(vm.Rules.LastError);
+    }
+
+    // ----- Address lookups -----
+
+    private void Whois_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { Info.LookupAddress: { } address } vm)
+            new WhoisWindow(vm.Service, address) { Owner = this }.Show();
+    }
+
+    private void AskWeb_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel?.Info.LookupAddress is { } address)
+            OpenInBrowser(InfoViewModel.WebLink(address));
+    }
+
+    private void ShowMap_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel?.Info.MapPlace is { } place)
+            OpenInBrowser(InfoViewModel.MapLink(place));
+    }
+
+    private static void OpenInBrowser(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
 
     // ----- Connection log and history -----
 

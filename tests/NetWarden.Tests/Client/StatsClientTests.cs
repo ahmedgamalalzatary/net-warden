@@ -152,6 +152,19 @@ public sealed class StatsViewModelTests
     }
 
     [Fact]
+    public void Network_choice_goes_into_the_query_and_survives_a_new_list()
+    {
+        var home = new KnownNetwork("home", "HomeNet", "Wi-Fi", "Card", true, "HomeNet", null, default, default);
+        _vm.SetNetworks([home]);
+        Assert.Equal(["All networks", "HomeNet"], _vm.Networks.Select(n => n.Name));
+
+        _vm.Network = _vm.Networks[1];
+        _vm.SetNetworks([home]);
+
+        Assert.Equal("home", _vm.BuildQuery().NetworkId);
+    }
+
+    [Fact]
     public async Task Stepping_back_moves_the_range_and_ends_live_updates()
     {
         _vm.Range = StatsRange.Month;

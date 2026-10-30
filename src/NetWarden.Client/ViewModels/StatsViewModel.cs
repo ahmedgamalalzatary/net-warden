@@ -30,6 +30,11 @@ public sealed record StatsRowView(StatsRow Row, string Label, string? Detail, st
 }
 
 /// <summary>The Statistics tab: what was transferred over a time range, by app, host, port, country or user.</summary>
+public sealed record StatsNetworkChoice(string? Id, string Name)
+{
+    public static StatsNetworkChoice All { get; } = new(null, "All networks");
+}
+
 public sealed partial class StatsViewModel : ObservableObject
 {
     private readonly IServiceRequester _service;
@@ -61,6 +66,35 @@ public sealed partial class StatsViewModel : ObservableObject
     public IReadOnlyList<StatsRange> Ranges { get; } = Enum.GetValues<StatsRange>();
     public IReadOnlyList<StatsGroupBy> GroupBys { get; } = Enum.GetValues<StatsGroupBy>();
     public IReadOnlyList<string> Protocols { get; } = ["All", "TCP", "UDP"];
+
+    /// <summary>"All networks" first, then every network known; set by the main view model.</summary>
+    public IReadOnlyList<StatsNetworkChoice> Networks
+    {
+        get => _networks;
+        private set => SetProperty(ref _networks, value);
+    }
+
+    private IReadOnlyList<StatsNetworkChoice> _networks = [StatsNetworkChoice.All];
+
+    public StatsNetworkChoice Network
+    {
+        get => _network;
+        set
+        {
+            if (SetProperty(ref _network, value ?? StatsNetworkChoice.All))
+                _ = RefreshAsync();
+        }
+    }
+
+    private StatsNetworkChoice _network = StatsNetworkChoice.All;
+
+    public void SetNetworks(IReadOnlyList<KnownNetwork> networks)
+    {
+        string? selected = Network.Id;
+        Networks = [StatsNetworkChoice.All, .. networks.OrderBy(n => n.Name, StringComparer.CurrentCultureIgnoreCase).Select(n => new StatsNetworkChoice(n.Id, n.Name))];
+        _network = Networks.FirstOrDefault(n => n.Id == selected) ?? StatsNetworkChoice.All;
+        OnPropertyChanged(nameof(Network));
+    }
 
     /// <summary>Time zone the service buckets days and hours in; the client's own.</summary>
     public TimeZoneInfo TimeZone { get; set; } = TimeZoneInfo.Local;
@@ -200,7 +234,7 @@ public sealed partial class StatsViewModel : ObservableObject
             _ => null,
         };
         return new StatsQuery(window.From, window.To, window.Bucket, GroupBy, zones.Count == 3 ? null : zones, protocol,
-            AppFilter?.Id, TimeZone.Id);
+            AppFilter?.Id, TimeZone.Id, NetworkId: Network.Id);
     }
 
     [RelayCommand]

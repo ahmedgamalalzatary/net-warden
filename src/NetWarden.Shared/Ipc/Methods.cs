@@ -7,6 +7,13 @@ public static class Methods
     public const string SettingsGet = "settings.get";
     public const string SettingsUpdate = "settings.update";
     public const string AppsResolve = "apps.resolve";
+    public const string AppsList = "apps.list";
+    public const string AppsSetTags = "apps.setTags";
+    public const string AppsDelete = "apps.delete";
+    public const string NetworksList = "networks.list";
+    public const string NetworksDelete = "networks.delete";
+    public const string GeoLookup = "geo.lookup";
+    public const string WhoisLookup = "whois.lookup";
 
     public const string ActivityGet = "activity.get";
     public const string ActivityResetTotals = "activity.resetTotals";
@@ -22,6 +29,7 @@ public static class Methods
     public const string FiltersSave = "filters.save";
     public const string FiltersDelete = "filters.delete";
     public const string FiltersEnsureForApp = "filters.ensureForApp";
+    public const string FiltersEnsure = "filters.ensure";
 
     public const string FilterStatus = "packetfilter.status";
     public const string BlockerPending = "blocker.pending";

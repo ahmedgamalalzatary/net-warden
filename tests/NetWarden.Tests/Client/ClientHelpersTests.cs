@@ -184,7 +184,7 @@ public class InfoViewModelTests
     [Fact]
     public async Task Host_names_are_looked_up_once_per_address()
     {
-        _service.Handler = (_, _) => "cdn.example";
+        _service.Handler = (method, _) => method == Methods.DnsReverse ? "cdn.example" : null;
         var row = new ActivityRow("c", 1);
         row.Update(Snapshots.Conn("c", 1), new PortNames([]));
         var other = new ActivityRow("d", 1);

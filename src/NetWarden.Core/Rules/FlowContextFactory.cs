@@ -6,7 +6,12 @@ using NetWarden.Shared.Contracts;
 namespace NetWarden.Core.Rules;
 
 /// <summary>Builds a <see cref="FlowContext"/> for a socket from process, user and DNS knowledge.</summary>
-public sealed class FlowContextFactory(Func<int, AppInfo?> resolveApp, Func<int, ProcessUser?> resolveUser, DnsMap dns)
+public sealed class FlowContextFactory(
+    Func<int, AppInfo?> resolveApp,
+    Func<int, ProcessUser?> resolveUser,
+    DnsMap dns,
+    Func<string, IReadOnlyCollection<string>>? tagsOf = null,
+    Func<IPAddress, string?>? networkOf = null)
 {
     public AppInfo? ResolveApp(int processId) => resolveApp(processId);
 
@@ -19,6 +24,6 @@ public sealed class FlowContextFactory(Func<int, AppInfo?> resolveApp, Func<int,
         ProcessUser? user = resolveUser(processId);
         return new FlowContext(app.Id, app.Path, processId, protocol, kind,
             Endpoints.Normalize(local), localPort, Endpoints.Normalize(remote), remotePort,
-            dns.Lookup(remote), user?.Sid, user?.Name);
+            dns.Lookup(remote), user?.Sid, user?.Name, tagsOf?.Invoke(app.Id), networkOf?.Invoke(local));
     }
 }

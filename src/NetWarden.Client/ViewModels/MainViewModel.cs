@@ -48,6 +48,9 @@ public sealed partial class MainViewModel : ObservableObject
         Priorities = new PrioritiesViewModel(() => SettingsFromService, UpdateSettingsAsync);
         Stats = new StatsViewModel(connection, settings, saveSettings, ports, () => SettingsFromService, UpdateSettingsAsync);
         Quotas = new QuotasViewModel(connection);
+        Apps = new AppsViewModel(connection);
+        Networks = new NetworksViewModel(connection);
+        Networks.Reloaded += Stats.SetNetworks;
         Log = new ConnectionLogViewModel(connection);
         History = new ConnectionHistoryViewModel(connection, () => DateTimeOffset.Now);
         Activity.Updated += () =>
@@ -85,6 +88,8 @@ public sealed partial class MainViewModel : ObservableObject
     public PrioritiesViewModel Priorities { get; }
     public StatsViewModel Stats { get; }
     public QuotasViewModel Quotas { get; }
+    public AppsViewModel Apps { get; }
+    public NetworksViewModel Networks { get; }
     public ConnectionLogViewModel Log { get; }
     public ConnectionHistoryViewModel History { get; }
 
@@ -449,6 +454,7 @@ public sealed partial class MainViewModel : ObservableObject
             SettingsFromService = await _connection.RequestAsync<ServiceSettings>(Methods.SettingsGet);
             await Rules.ReloadAsync();
             await Blocker.LoadAsync();
+            await Networks.RefreshAsync();
             if (await _connection.RequestAsync<ActivitySnapshot>(Methods.ActivityGet) is { } snapshot)
                 Activity.Apply(snapshot);
             if (IsStatsTabVisible)

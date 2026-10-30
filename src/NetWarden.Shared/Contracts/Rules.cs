@@ -36,6 +36,7 @@ public enum FilterFunctionKind
     IsInternet,
     IsLocalNetwork,
     IsLoopback,
+    Network,
 }
 
 /// <summary>

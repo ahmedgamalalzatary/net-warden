@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <Resource Include="Assets/NetWarden.ico" />
+    <Resource Include="Assets/Flags/*.png" />
   </ItemGroup>
 
   <ItemGroup>

@@ -18,7 +18,9 @@ public readonly record struct StatsRecord(
     string UserSid,
     string? UserName,
     long In,
-    long Out);
+    long Out,
+    string? Network = null,
+    string? NetworkName = null);
 
 /// <summary>What one (app, host, port, protocol, user) moved in a time range.</summary>
 public sealed record StatsFlowSummary(string AppId, string AppPath, string Address, string? HostName, int Port,
@@ -41,6 +43,7 @@ public sealed class StatsDatabase : IDisposable
         CREATE TABLE IF NOT EXISTS apps(id INTEGER PRIMARY KEY, app_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL, path TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS hosts(id INTEGER PRIMARY KEY, address TEXT NOT NULL UNIQUE, name TEXT);
         CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, sid TEXT NOT NULL UNIQUE, name TEXT);
+        CREATE TABLE IF NOT EXISTS networks(id INTEGER PRIMARY KEY, network_id TEXT NOT NULL UNIQUE, name TEXT);
         CREATE TABLE IF NOT EXISTS traffic(
             slot INTEGER NOT NULL,
             app INTEGER NOT NULL,
@@ -49,10 +52,35 @@ public sealed class StatsDatabase : IDisposable
             protocol INTEGER NOT NULL,
             zone INTEGER NOT NULL,
             user INTEGER NOT NULL,
+            network INTEGER NOT NULL,
             bytes_in INTEGER NOT NULL,
             bytes_out INTEGER NOT NULL,
-            PRIMARY KEY(slot, app, host, port, protocol, zone, user)) WITHOUT ROWID;
+            PRIMARY KEY(slot, app, host, port, protocol, zone, user, network)) WITHOUT ROWID;
         CREATE INDEX IF NOT EXISTS traffic_app ON traffic(app, slot);
+        """;
+
+    /// <summary>Records from before networks were stored belong to the unknown network ("").</summary>
+    private const string AddNetworkColumn = """
+        BEGIN;
+        INSERT OR IGNORE INTO networks(network_id, name) VALUES('', NULL);
+        ALTER TABLE traffic RENAME TO traffic_old;
+        DROP INDEX IF EXISTS traffic_app;
+        CREATE TABLE traffic(
+            slot INTEGER NOT NULL,
+            app INTEGER NOT NULL,
+            host INTEGER NOT NULL,
+            port INTEGER NOT NULL,
+            protocol INTEGER NOT NULL,
+            zone INTEGER NOT NULL,
+            user INTEGER NOT NULL,
+            network INTEGER NOT NULL,
+            bytes_in INTEGER NOT NULL,
+            bytes_out INTEGER NOT NULL,
+            PRIMARY KEY(slot, app, host, port, protocol, zone, user, network)) WITHOUT ROWID;
+        INSERT INTO traffic SELECT slot, app, host, port, protocol, zone, user, (SELECT id FROM networks WHERE network_id = ''), bytes_in, bytes_out FROM traffic_old;
+        DROP TABLE traffic_old;
+        CREATE INDEX traffic_app ON traffic(app, slot);
+        COMMIT;
         """;
 
     private readonly SqliteConnection _db;
@@ -60,6 +88,7 @@ public sealed class StatsDatabase : IDisposable
     private readonly Dictionary<string, (long Id, string? Name)> _apps = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (long Id, string? Name)> _hosts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (long Id, string? Name)> _users = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (long Id, string? Name)> _networks = new(StringComparer.Ordinal);
 
     public StatsDatabase(string path)
     {
@@ -75,10 +104,18 @@ public sealed class StatsDatabase : IDisposable
         _db.Open();
         Execute("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
         Execute(Schema);
+        if (!HasNetworkColumn())
+            Execute(AddNetworkColumn);
         LoadIds();
     }
 
     public string FilePath { get; }
+
+    private bool HasNetworkColumn()
+    {
+        using var cmd = Command("SELECT COUNT(*) FROM pragma_table_info('traffic') WHERE name = 'network'");
+        return (long)cmd.ExecuteScalar()! > 0;
+    }
 
     public void Write(IReadOnlyCollection<StatsRecord> records)
     {
@@ -103,8 +140,8 @@ public sealed class StatsDatabase : IDisposable
     {
         using var tx = _db.BeginTransaction();
         using var upsert = Command("""
-            INSERT INTO traffic(slot, app, host, port, protocol, zone, user, bytes_in, bytes_out)
-            VALUES($slot, $app, $host, $port, $protocol, $zone, $user, $in, $out)
+            INSERT INTO traffic(slot, app, host, port, protocol, zone, user, network, bytes_in, bytes_out)
+            VALUES($slot, $app, $host, $port, $protocol, $zone, $user, $network, $in, $out)
             ON CONFLICT DO UPDATE SET bytes_in = bytes_in + excluded.bytes_in, bytes_out = bytes_out + excluded.bytes_out
             """, tx);
         var slot = upsert.Parameters.Add("$slot", SqliteType.Integer);
@@ -114,6 +151,7 @@ public sealed class StatsDatabase : IDisposable
         var protocol = upsert.Parameters.Add("$protocol", SqliteType.Integer);
         var zone = upsert.Parameters.Add("$zone", SqliteType.Integer);
         var user = upsert.Parameters.Add("$user", SqliteType.Integer);
+        var network = upsert.Parameters.Add("$network", SqliteType.Integer);
         var bytesIn = upsert.Parameters.Add("$in", SqliteType.Integer);
         var bytesOut = upsert.Parameters.Add("$out", SqliteType.Integer);
         upsert.Prepare();
@@ -124,6 +162,7 @@ public sealed class StatsDatabase : IDisposable
             app.Value = Id(_apps, "apps", "app_id", r.App.Id, r.App.DisplayName, ("path", r.App.Path), tx);
             host.Value = Id(_hosts, "hosts", "address", r.Address, r.HostName, null, tx);
             user.Value = Id(_users, "users", "sid", r.UserSid, r.UserName, null, tx);
+            network.Value = Id(_networks, "networks", "network_id", r.Network ?? "", r.NetworkName, null, tx);
             port.Value = r.Port;
             protocol.Value = (int)r.Protocol;
             zone.Value = (int)r.Zone;
@@ -268,10 +307,10 @@ public sealed class StatsDatabase : IDisposable
         {
             using var tx = _db.BeginTransaction();
             using var merge = Command("""
-                INSERT INTO traffic(slot, app, host, port, protocol, zone, user, bytes_in, bytes_out)
-                SELECT slot - slot % 3600, app, host, port, protocol, zone, user, SUM(bytes_in), SUM(bytes_out)
+                INSERT INTO traffic(slot, app, host, port, protocol, zone, user, network, bytes_in, bytes_out)
+                SELECT slot - slot % 3600, app, host, port, protocol, zone, user, network, SUM(bytes_in), SUM(bytes_out)
                 FROM traffic WHERE slot < $cutoff AND slot % 3600 <> 0
-                GROUP BY slot - slot % 3600, app, host, port, protocol, zone, user
+                GROUP BY slot - slot % 3600, app, host, port, protocol, zone, user, network
                 ON CONFLICT DO UPDATE SET bytes_in = bytes_in + excluded.bytes_in, bytes_out = bytes_out + excluded.bytes_out
                 """, tx);
             merge.Parameters.AddWithValue("$cutoff", cutoff);
@@ -294,6 +333,7 @@ public sealed class StatsDatabase : IDisposable
                 DELETE FROM apps WHERE id NOT IN (SELECT DISTINCT app FROM traffic);
                 DELETE FROM hosts WHERE id NOT IN (SELECT DISTINCT host FROM traffic);
                 DELETE FROM users WHERE id NOT IN (SELECT DISTINCT user FROM traffic);
+                DELETE FROM networks WHERE id NOT IN (SELECT DISTINCT network FROM traffic);
                 """);
             LoadIds();
             Execute("VACUUM; PRAGMA wal_checkpoint(TRUNCATE);");
@@ -327,6 +367,11 @@ public sealed class StatsDatabase : IDisposable
             sql.Append(" AND t.app = (SELECT id FROM apps WHERE app_id = $app)");
             cmd.Parameters.AddWithValue("$app", appId);
         }
+        if (query.NetworkId is { } networkId)
+        {
+            sql.Append(" AND t.network = (SELECT id FROM networks WHERE network_id = $network)");
+            cmd.Parameters.AddWithValue("$network", networkId);
+        }
         return sql.ToString();
     }
 
@@ -341,6 +386,7 @@ public sealed class StatsDatabase : IDisposable
             StatsGroupBy.App => $"SELECT a.app_id, a.name, a.path, {sums} FROM traffic t JOIN apps a ON a.id = t.app WHERE {where} GROUP BY t.app",
             StatsGroupBy.Port => $"SELECT t.protocol, t.port, NULL, {sums} FROM traffic t WHERE {where} GROUP BY t.protocol, t.port",
             StatsGroupBy.User => $"SELECT u.sid, u.name, NULL, {sums} FROM traffic t JOIN users u ON u.id = t.user WHERE {where} GROUP BY t.user",
+            StatsGroupBy.Network => $"SELECT n.network_id, n.name, NULL, {sums} FROM traffic t JOIN networks n ON n.id = t.network WHERE {where} GROUP BY t.network",
             _ => $"SELECT h.address, h.name, NULL, {sums} FROM traffic t JOIN hosts h ON h.id = t.host WHERE {where} GROUP BY t.host",
         };
 
@@ -366,6 +412,10 @@ public sealed class StatsDatabase : IDisposable
                     case StatsGroupBy.User:
                         string sid = reader.GetString(0);
                         rows.Add(new StatsRow(sid, text1 ?? (sid.Length == 0 ? "Unknown" : sid), text1 is null ? null : sid, bytesIn, bytesOut));
+                        break;
+                    case StatsGroupBy.Network:
+                        string networkId = reader.GetString(0);
+                        rows.Add(new StatsRow(networkId, text1 ?? (networkId.Length == 0 ? "Unknown" : networkId), null, bytesIn, bytesOut));
                         break;
                     case StatsGroupBy.Country:
                         string code = CountryOf(reader.GetString(0), geo) ?? "";
@@ -488,6 +538,7 @@ public sealed class StatsDatabase : IDisposable
         Load(_apps, "SELECT app_id, id, name FROM apps");
         Load(_hosts, "SELECT address, id, name FROM hosts");
         Load(_users, "SELECT sid, id, name FROM users");
+        Load(_networks, "SELECT network_id, id, name FROM networks");
 
         void Load(Dictionary<string, (long, string?)> cache, string sql)
         {

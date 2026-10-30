@@ -13,7 +13,8 @@ public sealed class StatsRecorder(
     Func<CompiledRuleSet> rules,
     Func<ServiceSettings> settings,
     FlowContextFactory flows,
-    ZoneClassifier zones)
+    ZoneClassifier zones,
+    Func<string, string?>? networkName = null)
 {
     /// <summary>What is known about a flow is looked up again after this long (DNS names arrive late).</summary>
     public static readonly TimeSpan FactsLifetime = TimeSpan.FromSeconds(60);
@@ -52,7 +53,7 @@ public sealed class StatsRecorder(
                     continue;
                 long slot = t.Time.ToUnixTimeSeconds();
                 slot -= slot % 60;
-                var key = new Key(slot, t.App.Id, facts.Address, facts.Port, t.Protocol, facts.Zone, facts.UserSid);
+                var key = new Key(slot, t.App.Id, facts.Address, facts.Port, t.Protocol, facts.Zone, facts.UserSid, facts.Network);
                 var sum = _pending.GetValueOrDefault(key);
                 _pending[key] = (sum.In + t.In, sum.Out + t.Out);
                 _apps[t.App.Id] = t.App;
@@ -72,7 +73,8 @@ public sealed class StatsRecorder(
             var records = new List<StatsRecord>(_pending.Count);
             foreach (var (k, sum) in _pending)
                 records.Add(new StatsRecord(k.Slot, _apps[k.AppId], k.Address, _hostNames.GetValueOrDefault(k.Address), k.Port,
-                    k.Protocol, k.Zone, k.UserSid, _userNames.GetValueOrDefault(k.UserSid), sum.In, sum.Out));
+                    k.Protocol, k.Zone, k.UserSid, _userNames.GetValueOrDefault(k.UserSid), sum.In, sum.Out,
+                    k.Network, k.Network is { } network ? networkName?.Invoke(network) : null));
             _pending = [];
             _apps.Clear();
             _hostNames.Clear();
@@ -123,6 +125,7 @@ public sealed class StatsRecorder(
             ZoneOf(t),
             flow?.UserSid ?? "",
             flow?.UserName,
+            flow?.NetworkId,
             ignore,
             ruleSet.Generation,
             t.Time);
@@ -130,8 +133,8 @@ public sealed class StatsRecorder(
         return facts;
     }
 
-    private readonly record struct Key(long Slot, string AppId, string Address, int Port, TransportProtocol Protocol, StatsZone Zone, string UserSid);
+    private readonly record struct Key(long Slot, string AppId, string Address, int Port, TransportProtocol Protocol, StatsZone Zone, string UserSid, string? Network);
 
-    private sealed record Facts(string Address, string? HostName, int Port, StatsZone Zone, string UserSid, string? UserName,
+    private sealed record Facts(string Address, string? HostName, int Port, StatsZone Zone, string UserSid, string? UserName, string? Network,
         bool IgnoreData, long Generation, DateTimeOffset Created);
 }

@@ -17,7 +17,8 @@ public sealed record FlowContext(
     string? RemoteHost = null,
     string? UserSid = null,
     string? UserName = null,
-    IReadOnlyCollection<string>? Tags = null)
+    IReadOnlyCollection<string>? Tags = null,
+    string? NetworkId = null)
 {
     /// <summary>Stable id of this flow, used for per-connection limit buckets.</summary>
     public string FlowKey => $"{ProcessId}|{Protocol}|{LocalAddress}|{LocalPort}|{RemoteAddress}|{RemotePort}";
@@ -223,6 +224,7 @@ public static class FilterCompiler
                 string.Equals(f.UserSid, v, StringComparison.OrdinalIgnoreCase) || string.Equals(f.UserName, v, StringComparison.OrdinalIgnoreCase)),
             FilterFunctionKind.ProcessId => ProcessIds(values),
             FilterFunctionKind.Tag => AnyString(values, (f, v) => f.Tags?.Contains(v, StringComparer.OrdinalIgnoreCase) == true),
+            FilterFunctionKind.Network => AnyString(values, (f, v) => string.Equals(f.NetworkId, v, StringComparison.OrdinalIgnoreCase)),
             FilterFunctionKind.IsInternet => f => zones.IsInternet(f.RemoteAddress, f.LocalAddress),
             FilterFunctionKind.IsLocalNetwork => f => zones.IsLocalNetwork(f.RemoteAddress, f.LocalAddress),
             FilterFunctionKind.IsLoopback => f => ZoneClassifier.IsLoopback(f.RemoteAddress, f.LocalAddress),

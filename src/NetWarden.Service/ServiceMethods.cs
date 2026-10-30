@@ -9,6 +9,7 @@ using NetWarden.Core.Monitoring;
 using NetWarden.Core.Packets;
 using NetWarden.Core.Quotas;
 using NetWarden.Core.Rules;
+using NetWarden.Core.Stats;
 using NetWarden.Shared.Contracts;
 using NetWarden.Shared.Ipc;
 
@@ -37,6 +38,7 @@ public static class ServiceMethods
                 Task.FromResult(request is null ? null : resolver.Resolve(request.ProcessId)));
 
         RegisterActivity(dispatcher, monitor, hostNames);
+        RegisterAppsAndNetworks(dispatcher, sp);
         RegisterRules(dispatcher, rules, flows, settings, time);
 
         // Resolved lazily: PacketFilterService depends on the IPC server, which depends on this dispatcher.
@@ -114,6 +116,44 @@ public static class ServiceMethods
                     : throw new ArgumentException("Invalid IP address."));
     }
 
+    private static void RegisterAppsAndNetworks(IpcDispatcher dispatcher, IServiceProvider sp)
+    {
+        var apps = sp.GetRequiredService<AppRegistry>();
+        var networks = sp.GetRequiredService<NetworkRegistry>();
+        var geo = sp.GetRequiredService<CountryLookup>();
+        var whois = sp.GetRequiredService<WhoisClient>();
+        var stats = sp.GetRequiredService<StatsDatabase>();
+        dispatcher
+            .Register(Methods.AppsList, _ => Task.FromResult(apps.List().ToList()))
+            .Register<SetAppTagsRequest, bool>(Methods.AppsSetTags, (r, _) =>
+            {
+                apps.SetTags(Require(r).AppId, r!.Tags);
+                return Task.FromResult(true);
+            })
+            .Register<DeleteAppsRequest, bool>(Methods.AppsDelete, (r, _) => Task.Run(() =>
+            {
+                apps.Delete(Require(r).AppIds);
+                if (r!.DeleteStats)
+                    foreach (string id in r.AppIds)
+                        stats.Delete(new StatsDeleteRequest(AppId: id));
+                return true;
+            }))
+            .Register(Methods.NetworksList, _ => Task.FromResult(networks.List().ToList()))
+            .Register<DeleteNetworkRequest, bool>(Methods.NetworksDelete, (r, _) =>
+            {
+                networks.Delete(Require(r).Id);
+                return Task.FromResult(true);
+            })
+            .Register<AddressRequest, GeoInfo?>(Methods.GeoLookup, (r, _) =>
+                Task.FromResult(IPAddress.TryParse(Require(r).Address, out var address) && geo.Country(address) is { } code
+                    ? new GeoInfo(code, CountryLookup.CountryName(code))
+                    : null))
+            .Register<AddressRequest, string>(Methods.WhoisLookup, (r, ct) =>
+                IPAddress.TryParse(Require(r).Address, out var address)
+                    ? whois.LookupAsync(address, ct)
+                    : throw new ArgumentException("Invalid IP address."));
+    }
+
     private static void RegisterRules(IpcDispatcher dispatcher, RuleRepository rules, FlowContextFactory flows,
         SettingsService settings, TimeProvider time)
     {
@@ -128,6 +168,8 @@ public static class ServiceMethods
             })
             .Register<EnsureAppFilterRequest, FilterDefinition>(Methods.FiltersEnsureForApp, (r, _) =>
                 Task.FromResult(rules.EnsureAppFilter(Require(r).AppId, r!.DisplayName)))
+            .Register<EnsureFilterRequest, FilterDefinition>(Methods.FiltersEnsure, (r, _) =>
+                Task.FromResult(rules.EnsureFilter(Require(r).Name, r!.Functions)))
             .Register<RuleDefinition, RuleDefinition>(Methods.RulesSave, (r, _) =>
                 Task.FromResult(rules.SaveRule(r ?? throw new ArgumentException("Rule required."))))
             .Register<DeleteRequest, bool>(Methods.RulesDelete, (r, _) =>

@@ -99,6 +99,15 @@ public sealed partial class RulesViewModel(IServiceRequester service) : Observab
         return saved;
     }
 
+    /// <summary>Finds or creates the filter with exactly these functions.</summary>
+    public async Task<FilterDefinition?> EnsureFilterAsync(string name, IReadOnlyList<FilterFunction> functions)
+    {
+        var filter = await RunAsync(() => service.RequestAsync<FilterDefinition>(Methods.FiltersEnsure, new EnsureFilterRequest(name, functions)));
+        if (filter is not null)
+            await Refresh();
+        return filter;
+    }
+
     public async Task<FilterDefinition?> EnsureAppFilterAsync(AppInfo app)
     {
         var filter = await RunAsync(() => service.RequestAsync<FilterDefinition>(Methods.FiltersEnsureForApp,

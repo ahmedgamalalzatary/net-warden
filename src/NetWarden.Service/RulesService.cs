@@ -1,5 +1,6 @@
 using System.Net.NetworkInformation;
 using NetWarden.Core;
+using NetWarden.Core.Apps;
 using NetWarden.Core.Ipc;
 using NetWarden.Core.Monitoring;
 using NetWarden.Core.Rules;
@@ -15,6 +16,8 @@ public sealed class RulesService(
     RuleRepository rules,
     SettingsService settings,
     ZoneClassifier zones,
+    AppRegistry apps,
+    NetworkRegistry networks,
     IpcServer server,
     IServiceProvider services,
     ILogger<RulesService> logger) : BackgroundService
@@ -28,6 +31,10 @@ public sealed class RulesService(
         rules.Changed += generation => _ = server.BroadcastAsync(Events.RulesChanged, generation);
         settings.Changed += s => _ = server.BroadcastAsync(Events.SettingsChanged, s);
         NetworkChange.NetworkAddressChanged += OnNetworkChanged;
+        // Tags and the current network are inputs of filters.
+        apps.TagsChanged += rules.Invalidate;
+        networks.Changed += rules.Invalidate;
+        RefreshNetworks();
 
         _dns = services.GetService<EtwDnsSource>();
         try
@@ -55,7 +62,23 @@ public sealed class RulesService(
         }
     }
 
-    private void OnNetworkChanged(object? sender, EventArgs e) => zones.Refresh();
+    private void OnNetworkChanged(object? sender, EventArgs e)
+    {
+        zones.Refresh();
+        RefreshNetworks();
+    }
+
+    private void RefreshNetworks()
+    {
+        try
+        {
+            networks.Refresh();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Reading the current networks failed.");
+        }
+    }
 
     public override void Dispose()
     {

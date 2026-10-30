@@ -18,6 +18,7 @@ public enum StatsGroupBy
     Port,
     Country,
     User,
+    Network,
 }
 
 /// <summary>Width of one bar in the time chart; buckets follow the caller's time zone.</summary>
@@ -43,7 +44,8 @@ public sealed record StatsQuery(
     TransportProtocol? Protocol = null,
     string? AppId = null,
     string? TimeZoneId = null,
-    int MaxRows = 500);
+    int MaxRows = 500,
+    string? NetworkId = null);
 
 /// <summary>Bytes transferred in one time bucket (or one hour of the day for the histogram).</summary>
 public sealed record StatsPoint(DateTimeOffset Time, long In, long Out);

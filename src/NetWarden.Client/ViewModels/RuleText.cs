@@ -20,6 +20,7 @@ public static class RuleText
         FilterFunctionKind.User => "User",
         FilterFunctionKind.ProcessId => "Process id",
         FilterFunctionKind.Tag => "Tag",
+        FilterFunctionKind.Network => "Network",
         FilterFunctionKind.IsInternet => "Remote host is on Internet",
         FilterFunctionKind.IsLocalNetwork => "Remote host is on local network",
         FilterFunctionKind.IsLoopback => "Loopback traffic",
@@ -42,6 +43,7 @@ public static class RuleText
         FilterFunctionKind.User => "SID or DOMAIN\\user",
         FilterFunctionKind.ProcessId => "Process id numbers",
         FilterFunctionKind.Tag => "Tag names",
+        FilterFunctionKind.Network => "Network ids; easiest from the Networks tab's Add rule",
         _ => "No values",
     };
 

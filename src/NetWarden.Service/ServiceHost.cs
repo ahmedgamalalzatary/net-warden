@@ -58,6 +58,18 @@ public static class ServiceHost
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<AppIdentityResolver>();
+        services.AddSingleton(sp => new AppRegistry(
+            new JsonFileStore<AppsDocument>(Path.Combine(Options(sp).ResolveDataDirectory(), "apps.json"),
+                sp.GetRequiredService<ILogger<JsonFileStore<AppsDocument>>>()),
+            sp.GetRequiredService<TimeProvider>(),
+            logger: sp.GetRequiredService<ILogger<AppRegistry>>()));
+        services.AddSingleton(sp => new NetworkRegistry(
+            new JsonFileStore<NetworksDocument>(Path.Combine(Options(sp).ResolveDataDirectory(), "networks.json"),
+                sp.GetRequiredService<ILogger<JsonFileStore<NetworksDocument>>>()),
+            NetworkProbe.Detect,
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<NetworkRegistry>>()));
+        services.AddSingleton(_ => new WhoisClient());
         services.AddSingleton<ProcessUsers>();
         services.AddSingleton(sp => new SettingsService(new JsonFileStore<ServiceSettings>(
             Path.Combine(Options(sp).ResolveDataDirectory(), "settings.json"),
@@ -90,7 +102,9 @@ public static class ServiceHost
         services.AddSingleton(sp => new FlowContextFactory(
             sp.GetRequiredService<AppIdentityResolver>().Resolve,
             sp.GetRequiredService<ProcessUsers>().Get,
-            sp.GetRequiredService<DnsMap>()));
+            sp.GetRequiredService<DnsMap>(),
+            sp.GetRequiredService<AppRegistry>().TagsOf,
+            sp.GetRequiredService<NetworkRegistry>().NetworkOf));
 
         // Packet filtering
         services.AddSingleton<IFlowOwnerLookup>(sp => new SocketOwnerLookup(sp.GetRequiredService<ISocketTable>(), sp.GetRequiredService<TimeProvider>()));
@@ -117,7 +131,8 @@ public static class ServiceHost
             () => sp.GetRequiredService<RuleRepository>().Current,
             () => sp.GetRequiredService<SettingsService>().Current,
             sp.GetRequiredService<FlowContextFactory>(),
-            sp.GetRequiredService<ZoneClassifier>()));
+            sp.GetRequiredService<ZoneClassifier>(),
+            sp.GetRequiredService<NetworkRegistry>().NameOf));
         services.AddSingleton<StatsService>();
 
         // Quotas

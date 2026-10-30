@@ -24,7 +24,7 @@ Status: [ ] todo  [~] in progress  [x] done
 
 ## Phase 2 - Filters & rules engine
 - [x] 2.1 Zones: Internet, Local network, Loopback, Forwarded
-- [x] 2.2 Filters: app, path (wildcards), remote/local IP range, remote/local port range, protocol, domain name (wildcards), user, process id, tag; negation (is / is not). Network-based filters come with 10.3
+- [x] 2.2 Filters: app, path (wildcards), remote/local IP range, remote/local port range, protocol, domain name (wildcards), user, process id, tag, network; negation (is / is not)
 - [x] 2.3 Filter types: Filter, Zone, Composite (base filters); per-type: none / per-app / per-process / per-connection
 - [x] 2.4 Rule list: enable/disable, direction (in/out/both), weight/order, notes, rule state (active/inactive/disabled)
 
@@ -49,7 +49,7 @@ Status: [ ] todo  [~] in progress  [x] done
 ## Phase 6 - Statistics
 - [x] 6.1 Stats database (SQLite), periodic save, save Internet/Local/Loopback toggles
 - [x] 6.2 Stats view: time ranges (hour, today, week, month, year, custom), 24h histogram, time chart
-- [x] 6.3 Breakdown by apps, IPs/domains, ports, countries, users; filter by zone/protocol. Network filter comes with 10.3
+- [x] 6.3 Breakdown by apps, IPs/domains, ports, countries, users; networks; filter by zone/protocol/network
 - [x] 6.4 Export CSV; stats manager (DB info, delete by time, delete per app, compact)
 
 ## Phase 7 - Quotas
@@ -66,10 +66,10 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 9.2 Connection history per app: IP, hostname, port, data in/out, first/last transfer, export CSV
 
 ## Phase 10 - Apps, networks, geo
-- [ ] 10.1 Apps list (apps / services / store packages), installed/uninstalled, delete apps
-- [ ] 10.2 Tags for apps (usable in filters)
-- [ ] 10.3 Networks list: detected networks (SSID, gateway MAC, interface), network-based filters
-- [ ] 10.4 Geo-IP country/flag/town, WHOIS lookup, "ask web" / map link
+- [x] 10.1 Apps list (apps / services / store packages), installed/uninstalled, delete apps
+- [x] 10.2 Tags for apps (usable in filters)
+- [x] 10.3 Networks list: detected networks (SSID, gateway MAC, interface), network-based filters
+- [x] 10.4 Geo-IP country and flag, WHOIS lookup, "ask web" / map link. Town left out: the city database is far larger than the whole app, and online lookups would send addresses to a third party
 
 ## Phase 11 - Client polish
 - [ ] 11.0 Clean UI reimplementation (load the frontend-design skill first; use the whole app as a real user before designing). Easy to use, not everything in one place; clear navigation; remembers the user's choices (sorting, columns, selected views, window layout)

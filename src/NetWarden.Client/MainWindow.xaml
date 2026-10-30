@@ -16,6 +16,7 @@
     <Window.Resources>
         <local:BindingProxy x:Key="Proxy" Data="{Binding}" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <local:FlagImageConverter x:Key="FlagImage" />
 
         <Style x:Key="NumberCell" TargetType="TextBlock">
             <Setter Property="HorizontalAlignment" Value="Right" />
@@ -326,6 +327,21 @@
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="{Binding Info.Title}" FontSize="15" FontWeight="SemiBold"
                                TextWrapping="Wrap" Margin="0,0,0,10" />
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Info.LookupAddress}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <Image Source="{Binding Info.FlagCode, Converter={StaticResource FlagImage}}" Width="20" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <Button Content="WHOIS" Padding="8,2" Click="Whois_Click" ToolTip="Asks the public WHOIS servers about this address" />
+                        <Button Content="Web" Padding="8,2" Margin="6,0,0,0" Click="AskWeb_Click" ToolTip="Opens this address on ipinfo.io in your browser" />
+                        <Button Content="Map" Padding="8,2" Margin="6,0,0,0" Click="ShowMap_Click" ToolTip="Opens the country on OpenStreetMap in your browser" />
+                    </StackPanel>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ItemsControl ItemsSource="{Binding Info.Items}">
                             <ItemsControl.ItemTemplate>
@@ -614,6 +630,8 @@
                     <CheckBox Content="Loopback" IsChecked="{Binding ShowLoopback}" Margin="12,0,0,0" />
                     <TextBlock Text="Protocol:" Margin="20,0,6,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
                     <ComboBox Width="70" ItemsSource="{Binding Protocols}" SelectedItem="{Binding Protocol}" />
+                    <TextBlock Text="Network:" Margin="20,0,6,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
+                    <ComboBox Width="140" ItemsSource="{Binding Networks}" SelectedItem="{Binding Network}" DisplayMemberPath="Name" />
                     <Border Margin="16,0,0,0" Padding="8,2,4,2" CornerRadius="10" Background="{DynamicResource SelectionBackground}"
                             Visibility="{Binding HasAppFilter, Converter={StaticResource BoolToVis}}">
                         <StackPanel Orientation="Horizontal">
@@ -710,6 +728,65 @@
                     </Border>
                     </Grid>
                 </Grid>
+            </DockPanel>
+        </TabItem>
+
+        <!-- Apps -->
+        <TabItem x:Name="AppsTab" Header="Apps" Padding="14,4">
+            <DockPanel Margin="8" DataContext="{Binding Apps}">
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False">
+                    <ComboBox Width="110" ItemsSource="{Binding Availabilities}" SelectedItem="{Binding Availability}" />
+                    <TextBox Width="220" Margin="12,0,0,0" VerticalContentAlignment="Center"
+                             Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search names, paths and tags" />
+                    <Button Content="Delete..." Padding="10,3" Margin="12,0,0,0" Click="DeleteApp_Click" />
+                    <TextBlock Text="Tags:" Margin="24,0,6,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
+                    <TextBox Width="190" VerticalContentAlignment="Center" Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Tags of the selected app, separated by commas" />
+                    <Button Content="Save tags" Padding="10,3" Margin="6,0,0,0" Command="{Binding SaveTagsCommand}" />
+                    <ComboBox Width="120" Margin="24,0,0,0" ItemsSource="{Binding AllTags}" SelectedItem="{Binding SelectedTag}" ToolTip="A tag in use" />
+                    <Button Content="Add rule for tag" Padding="10,3" Margin="6,0,0,0" Click="AddRuleForTag_Click" />
+                    <TextBlock Text="{Binding LastError}" Foreground="{DynamicResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                </DockPanel>
+                <DataGrid x:Name="AppsGrid" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}" AutoGenerateColumns="False" IsReadOnly="True"
+                          SelectionMode="Single" HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="24"
+                          Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
+                          AlternatingRowBackground="{DynamicResource AltRowBackground}" EnableRowVirtualization="True">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="220" />
+                        <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="110" />
+                        <DataGridTextColumn Header="Availability" Binding="{Binding Availability}" Width="90" />
+                        <DataGridTextColumn Header="Tags" Binding="{Binding Tags}" Width="150" />
+                        <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*" MinWidth="200" />
+                        <DataGridTextColumn Header="First seen" Binding="{Binding FirstSeen}" SortMemberPath="App.FirstSeen" Width="130" />
+                        <DataGridTextColumn Header="Last seen" Binding="{Binding LastSeen}" SortMemberPath="App.LastSeen" Width="130" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </TabItem>
+
+        <!-- Networks -->
+        <TabItem x:Name="NetworksTab" Header="Networks" Padding="14,4">
+            <DockPanel Margin="8" DataContext="{Binding Networks}">
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button Content="Add rule for network" Padding="10,3" Click="AddRuleForNetwork_Click" />
+                    <Button Content="Delete" Padding="10,3" Margin="8,0,0,0" Command="{Binding DeleteCommand}" CommandParameter="{Binding Selected}"
+                            ToolTip="Forget a network that isn't in use" />
+                    <TextBlock Text="{Binding LastError}" Foreground="{DynamicResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <DataGrid x:Name="NetworksGrid" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}" AutoGenerateColumns="False" IsReadOnly="True"
+                          SelectionMode="Single" HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="24"
+                          Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
+                          AlternatingRowBackground="{DynamicResource AltRowBackground}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="200" />
+                        <DataGridTextColumn Header="State" Binding="{Binding Active}" Width="70" />
+                        <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="70" />
+                        <DataGridTextColumn Header="Interface" Binding="{Binding Interface}" Width="*" MinWidth="180" />
+                        <DataGridTextColumn Header="Gateway MAC" Binding="{Binding Gateway}" Width="150" />
+                        <DataGridTextColumn Header="First seen" Binding="{Binding FirstSeen}" SortMemberPath="Network.FirstSeen" Width="130" />
+                        <DataGridTextColumn Header="Last seen" Binding="{Binding LastSeen}" SortMemberPath="Network.LastSeen" Width="130" />
+                    </DataGrid.Columns>
+                </DataGrid>
             </DockPanel>
         </TabItem>
 

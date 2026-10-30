@@ -1,3 +1,4 @@
+using NetWarden.Core.Apps;
 using NetWarden.Core.Ipc;
 using NetWarden.Core.Monitoring;
 using NetWarden.Core.Packets;
@@ -10,11 +11,20 @@ public sealed class ActivityService(
     ITrafficSource source,
     TrafficMonitor monitor,
     ConnectionLog log,
+    AppRegistry apps,
     Blocker blocker,
     IpcServer server,
     ILogger<ActivityService> logger) : BackgroundService
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(1);
+    private const int SaveAppsEveryTicks = 60;
+    private int _ticks;
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+        apps.Save();
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -38,6 +48,9 @@ public sealed class ActivityService(
             {
                 var snapshot = monitor.Tick();
                 log.Update(snapshot);
+                apps.Observe(snapshot);
+                if (++_ticks % SaveAppsEveryTicks == 0)
+                    apps.Save();
                 if (server.ClientCount > 0)
                     await server.BroadcastAsync(Events.ActivitySnapshot, snapshot).ConfigureAwait(false);
             }

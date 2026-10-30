@@ -23,13 +23,29 @@ public sealed partial class InfoViewModel(IServiceRequester service, PortNames p
     private const string RemoteHostLabel = "Remote host";
 
     private readonly Dictionary<string, string> _hostNames = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, GeoInfo?> _countries = new(StringComparer.Ordinal);
     private ActivityRow? _row;
     private int _version;
 
     [ObservableProperty]
     private string _title = "Nothing selected";
 
+    /// <summary>The public address the WHOIS, web and map lookups are for; null for private ones.</summary>
+    [ObservableProperty]
+    private string? _lookupAddress;
+
+    /// <summary>Lower-case country code of <see cref="LookupAddress"/>, naming its flag.</summary>
+    [ObservableProperty]
+    private string? _flagCode;
+
     public ObservableCollection<InfoItem> Items { get; } = [];
+
+    public static string WebLink(string address) => $"https://ipinfo.io/{address}";
+
+    public static string MapLink(string place) => $"https://www.openstreetmap.org/search?query={Uri.EscapeDataString(place)}";
+
+    /// <summary>What the map link searches for: the selected address's country.</summary>
+    public string? MapPlace => LookupAddress is { } a ? _countries.GetValueOrDefault(a)?.Name : null;
 
     public async Task ShowAsync(ActivityRow? row)
     {
@@ -39,6 +55,24 @@ public sealed partial class InfoViewModel(IServiceRequester service, PortNames p
         _row = row;
         Items.Clear();
         Refresh();
+
+        if (row?.Connection?.RemoteAddress is { } remote)
+        {
+            if (!_countries.ContainsKey(remote))
+            {
+                GeoInfo? geo = null;
+                try
+                {
+                    geo = await service.RequestAsync<GeoInfo>(Methods.GeoLookup, new AddressRequest(remote));
+                }
+                catch (Exception ex) when (ex is IpcRemoteException or IpcDisconnectedException)
+                {
+                }
+                _countries[remote] = geo;
+            }
+            if (version == _version)
+                Refresh();
+        }
 
         if (row?.Connection?.RemoteAddress is { } address && !_hostNames.ContainsKey(address))
         {
@@ -66,6 +100,12 @@ public sealed partial class InfoViewModel(IServiceRequester service, PortNames p
             BuildConnection(c, _row.Parent?.App, items);
         else
             Title = "Nothing selected";
+
+        // The country database has no private addresses, so a country also means "public".
+        var country = _row?.Connection?.RemoteAddress is { } address ? _countries.GetValueOrDefault(address) : null;
+        LookupAddress = country is null ? null : _row!.Connection!.RemoteAddress;
+        FlagCode = country?.Code.ToLowerInvariant();
+        OnPropertyChanged(nameof(MapPlace));
 
         if (Items.Select(i => i.Label).SequenceEqual(items.Select(i => i.Label)))
         {
@@ -122,6 +162,8 @@ public sealed partial class InfoViewModel(IServiceRequester service, PortNames p
             Add(items, c.Protocol == TransportProtocol.Udp ? "Last remote" : "Remote address",
                 $"{remote} : {ports.Describe(c.RemotePort, c.Protocol)}");
             Add(items, RemoteHostLabel, _hostNames.GetValueOrDefault(remote, "Resolving..."));
+            if (_countries.GetValueOrDefault(remote) is { } country)
+                Add(items, "Country", $"{country.Name} ({country.Code})");
         }
         Add(items, "Downloaded", ByteFormatter.Size(c.TotalIn));
         Add(items, "Uploaded", ByteFormatter.Size(c.TotalOut));

@@ -218,6 +218,16 @@ public sealed class RuleRepository
         }
     }
 
+    /// <summary>Publishes a new generation for inputs that live outside the rules: flows are evaluated again.</summary>
+    public void Invalidate()
+    {
+        lock (_lock)
+        {
+            Recompile();
+            Changed?.Invoke(_generation);
+        }
+    }
+
     public static int EffectiveWeight(RuleDefinition rule, FilterDefinition filter) =>
         rule.Weight != 0 ? rule.Weight
         : filter.Type == FilterType.Zone ? ZoneWeight

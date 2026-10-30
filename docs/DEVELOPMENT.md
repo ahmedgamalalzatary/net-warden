@@ -84,6 +84,10 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 | `stats.history` | `ConnectionHistoryQuery` | `ConnectionHistoryRow[]`, most recent first |
 | `connectionlog.get` | `ConnectionLogRequest { afterId }` | `ConnectionLogPage` |
 | `connectionlog.setRunning` / `connectionlog.clear` | `ConnectionLogRunning` / - | `true` |
+| `apps.list` / `apps.setTags` / `apps.delete` | - / `SetAppTagsRequest` / `DeleteAppsRequest` | `KnownAppView[]` / `true` / `true` |
+| `networks.list` / `networks.delete` | - / `DeleteNetworkRequest` | `NetworkView[]` / `true` |
+| `filters.ensure` | `EnsureFilterRequest` | the filter with exactly those functions |
+| `geo.lookup` / `whois.lookup` | `AddressRequest` | `GeoInfo` or null / text |
 | `quotas.status` | - | `QuotaStatus[]` |
 | `quotas.reset` / `quotas.initFromStats` | `QuotaRequest { ruleId }` | `true` |
 
@@ -194,6 +198,17 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 - The client asks `connectionlog.get` with its last seen id, only while the Log tab is shown.
 - History (`stats.history`) reads `stats.db`, grouped by app, host, port and protocol, so it has what statistics saved: minute (later
   hour) accuracy, and only the zones the Save toggles keep. Open it for one app from the Activity row's menu.
+
+## Apps, networks and geo notes
+- `AppRegistry` (`apps.json`) remembers every app seen online, with its tags. Installed = the file exists (System apps always).
+  Changing tags publishes a new rules generation, because the Tag filter reads them through `FlowContextFactory`.
+- `NetworkRegistry` (`networks.json`): a network is SSID + gateway MAC, so one Wi-Fi is one network on any adapter. `NetworkProbe`
+  lists adapters that are up and have a gateway (others, like most virtual ones, aren't networks), with `SendARP` and the WLAN API.
+- A flow's network comes from its local address; a socket bound to 0.0.0.0 or :: counts as the first active network.
+- `stats.db` has a `network` column since 0.10; older files are rebuilt on open, their records under the unknown network ("").
+- Country comes from the bundled database, flags from `Assets/Flags` (`python scripts/update-flags.py`, public domain). There is
+  no town. Addresses only leave the computer when the user asks: WHOIS (`whois.lookup`, port 43, IANA then referrals, at most 4
+  servers, 10 s each), Web (ipinfo.io) and Map (OpenStreetMap, country name only).
 
 ## Quota notes
 - Rule kind `Quota`: `QuotaBytes`, `QuotaReset` (a `TimeSchedule`; null = never) and the overflow fields. A quota counts all
