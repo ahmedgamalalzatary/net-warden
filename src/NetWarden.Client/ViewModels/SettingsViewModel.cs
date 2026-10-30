@@ -106,6 +106,18 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public string LanguageNote => _settings.Language == Loc.Current.Language ? "" : "The new language shows after you restart NetWarden.";
 
+    /// <summary>Kept encrypted in the settings file.</summary>
+    public string VirusTotalKey
+    {
+        get => Secrets.Unprotect(_settings.VirusTotalKey);
+        set
+        {
+            _settings.VirusTotalKey = string.IsNullOrWhiteSpace(value) ? null : Secrets.Protect(value.Trim());
+            _save();
+            OnPropertyChanged();
+        }
+    }
+
     public bool MinimizeToTray
     {
         get => _settings.MinimizeToTray;

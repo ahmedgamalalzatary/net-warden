@@ -46,6 +46,12 @@ public static class Methods
     public const string ConnectionLogSetRunning = "connectionlog.setRunning";
     public const string ConnectionLogClear = "connectionlog.clear";
 
+    public const string RemoteAuth = "remote.auth";
+    public const string RemoteGet = "remote.get";
+    public const string RemoteConfigure = "remote.configure";
+    public const string AccessGet = "access.get";
+    public const string AccessSet = "access.set";
+
     public const string QuotasStatus = "quotas.status";
     public const string QuotasReset = "quotas.reset";
     public const string QuotasInitFromStats = "quotas.initFromStats";

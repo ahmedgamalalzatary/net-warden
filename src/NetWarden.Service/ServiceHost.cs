@@ -34,6 +34,9 @@ public sealed class ServiceOptions
     /// <summary>When false WinDivert is never opened (tests).</summary>
     public bool EnablePacketFilter { get; set; } = true;
 
+    /// <summary>Address remote administration listens on; every address when null. Tests use loopback.</summary>
+    public string? RemoteBindAddress { get; set; }
+
     public string ResolveDataDirectory() => DataDirectory ?? AppPaths.DataDirectory;
 }
 
@@ -162,9 +165,20 @@ public static class ServiceHost
             Options(sp).PipeName,
             sp.GetRequiredService<IpcDispatcher>(),
             sp.GetRequiredService<ILogger<IpcServer>>(),
-            Options(sp).RestrictPipeToAdmins ? PipeSecurityFactory.AdminsAndSystem() : null));
+            Options(sp).RestrictPipeToAdmins ? () => sp.GetRequiredService<AccessList>().Security() : () => null));
+        services.AddSingleton(sp => new AccessList(new JsonFileStore<AccessDocument>(Path.Combine(Options(sp).ResolveDataDirectory(), "access.json"),
+            sp.GetRequiredService<ILogger<JsonFileStore<AccessDocument>>>())));
+        services.AddSingleton(sp => new RemoteAdmin(
+            sp.GetRequiredService<IpcServer>(),
+            new JsonFileStore<RemoteConfig>(Path.Combine(Options(sp).ResolveDataDirectory(), "remote.json"),
+                sp.GetRequiredService<ILogger<JsonFileStore<RemoteConfig>>>()),
+            Options(sp).ResolveDataDirectory(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<RemoteAdmin>>(),
+            Options(sp).RemoteBindAddress is { } bind ? System.Net.IPAddress.Parse(bind) : null));
 
         services.AddHostedService<IpcHostedService>();
+        services.AddHostedService<RemoteHostedService>();
         services.AddHostedService<ActivityService>();
         services.AddHostedService<RulesService>();
         services.AddHostedService(sp => sp.GetRequiredService<PacketFilterService>());

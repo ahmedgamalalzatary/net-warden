@@ -311,6 +311,7 @@
                             <Button Content="{svc:T Connection history}" Margin="0,0,6,6" Click="ShowHistory_Click" />
                             <Button Content="{svc:T Kill connections}" Margin="0,0,6,6" Click="Kill_Click" />
                             <Button Content="{svc:T Hide app}" Margin="0,0,6,6" Click="Hide_Click" />
+                            <Button Content="{svc:T Check with VirusTotal}" Margin="0,0,6,6" Click="VirusTotal_Click" ToolTip="Sends only the file's hash, never the file" />
                         </WrapPanel>
                     </StackPanel>
                     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
@@ -998,6 +999,91 @@
                                 <CheckBox Content="Loopback" IsChecked="{Binding SaveLoopback}" Margin="12,0,0,0" ToolTip="Traffic between programs on this computer" />
                             </StackPanel>
                             <Button Content="{svc:T Manage database...}" HorizontalAlignment="Left" Click="StatsManager_Click" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <TextBlock Text="{svc:T Manage another computer}" Style="{StaticResource SectionTitle}" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox Width="190" Text="{Binding RemoteConnect.Host, UpdateSourceTrigger=PropertyChanged}" ToolTip="Name or address of the computer" />
+                                <TextBox Width="64" Margin="6,0,0,0" Text="{Binding RemoteConnect.Port, UpdateSourceTrigger=PropertyChanged}" ToolTip="Port" />
+                                <PasswordBox x:Name="RemotePassword" Width="150" Margin="6,0,0,0" ToolTip="Its remote administration password" />
+                                <Button Content="{svc:T Connect}" Margin="6,0,0,0" Click="RemoteConnect_Click" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Content="{svc:T Use this computer}" Command="{Binding RemoteConnect.UseThisComputerCommand}" />
+                                <Button Content="{svc:T Forget its certificate}" Margin="6,0,0,0" Command="{Binding RemoteConnect.ForgetCertificateCommand}"
+                                        ToolTip="Only after that computer was reinstalled: the next connection accepts its new certificate" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding RemoteConnect.StatusText}" Foreground="{DynamicResource MutedText}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}" IsEnabled="{Binding IsConnected}">
+                        <StackPanel DataContext="{Binding RemoteAdmin}">
+                            <TextBlock Text="{svc:T Let other computers manage this one}" Style="{StaticResource SectionTitle}" />
+                            <CheckBox Content="{svc:T Allow remote administration}" IsChecked="{Binding IsEnabled}"
+                                      ToolTip="Whoever has the password can change every rule on this computer" />
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="{svc:T Port}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <TextBox Width="70" Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Text="{svc:T New password}" VerticalAlignment="Center" Margin="16,0,8,0" />
+                                <PasswordBox x:Name="RemoteNewPassword" Width="170" ToolTip="At least 8 characters. Leave empty to keep the current one." />
+                                <Button Content="{svc:T Apply}" Margin="8,0,0,0" Click="RemoteApply_Click" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding StateText}" Foreground="{DynamicResource MutedText}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                            <TextBox Text="{Binding Thumbprint, Mode=OneWay}" IsReadOnly="True" BorderThickness="0" Background="Transparent" TextWrapping="Wrap" Padding="0" Margin="0,2,0,0"
+                                     Foreground="{DynamicResource MutedText}" ToolTip="This computer's certificate. Compare it with what the other computer shows when it first connects." />
+                            <TextBlock Text="{Binding Error}" Foreground="{DynamicResource BadBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}" IsEnabled="{Binding IsConnected}">
+                        <StackPanel DataContext="{Binding Permissions}">
+                            <TextBlock Text="{svc:T Permissions}" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Text="Administrators always have access. Add users or groups here to give them full control of NetWarden, or to keep them out."
+                                       Foreground="{DynamicResource MutedText}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                            <ItemsControl ItemsSource="{Binding Entries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,2">
+                                            <Button DockPanel.Dock="Right" Content="{svc:T Delete}" Click="PermissionRemove_Click" />
+                                            <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="Denied" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsAllowed}" Value="True">
+                                                                <Setter Property="Text" Value="Allowed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBox Width="220" Text="{Binding NewAccount, UpdateSourceTrigger=PropertyChanged}" ToolTip="A user or group, for example PC\\alice or Users" />
+                                <CheckBox Content="{svc:T Allowed}" IsChecked="{Binding NewIsAllowed}" Margin="10,0,0,0" ToolTip="Leave unchecked to deny. A denied group wins over an allowed one." />
+                                <Button Content="{svc:T Add}" Margin="10,0,0,0" Command="{Binding AddCommand}" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding Error}" Foreground="{DynamicResource BadBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <TextBlock Text="VirusTotal" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Text="To check an app, select it in Activity. Only the file's hash is sent, and only when you ask. The key is stored encrypted for your Windows account."
+                                       Foreground="{DynamicResource MutedText}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{svc:T API key}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <TextBox Width="420" Text="{Binding AppSettings.VirusTotalKey}" KeyDown="SettingBox_KeyDown" ToolTip="Your own key from virustotal.com" />
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 

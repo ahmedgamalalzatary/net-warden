@@ -49,6 +49,7 @@ Source: "{#Stage}\service\*"; DestDir: "{app}\service"; Excludes: "WinDivert.dll
 ; identical version is skipped instead of replaced (the driver is also stopped first).
 Source: "{#Stage}\service\WinDivert.dll"; DestDir: "{app}\service"
 Source: "{#Stage}\service\WinDivert64.sys"; DestDir: "{app}\service"
+Source: "..\scripts\NetWarden.psm1"; DestDir: "{app}\powershell"; Flags: ignoreversion
 Source: "..\third_party\WinDivert\LICENSE"; DestDir: "{app}\licenses"; DestName: "WinDivert-LICENSE.txt"
 Source: "..\third_party\GeoIP\LICENSE"; DestDir: "{app}\licenses"; DestName: "DB-IP-LICENSE.txt"
 

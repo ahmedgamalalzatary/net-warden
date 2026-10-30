@@ -1,6 +1,10 @@
 using System.Collections.Concurrent;
 using System.IO.Pipes;
+using System.Net.Security;
+using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text.Json;
+using NetWarden.Shared.Contracts;
 
 namespace NetWarden.Shared.Ipc;
 
@@ -10,45 +14,90 @@ namespace NetWarden.Shared.Ipc;
 /// </summary>
 public sealed class ServiceClient : IAsyncDisposable
 {
-    private readonly string _pipeName;
+    private readonly Func<TimeSpan, CancellationToken, Task<Stream>> _connect;
     private readonly ConcurrentDictionary<long, TaskCompletionSource<IpcMessage>> _pending = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
-    private NamedPipeClientStream? _pipe;
+    private Stream? _stream;
     private Task? _readLoop;
     private long _nextId;
     private int _disconnected;
 
     public ServiceClient(string pipeName = PipeNames.Default)
     {
-        _pipeName = pipeName;
+        _connect = async (timeout, ct) =>
+        {
+            var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            try
+            {
+                await pipe.ConnectAsync((int)timeout.TotalMilliseconds, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                await pipe.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
+            return pipe;
+        };
     }
+
+    private ServiceClient(Func<TimeSpan, CancellationToken, Task<Stream>> connect) => _connect = connect;
+
+    /// <summary>A client over any stream the connector opens.</summary>
+    public static ServiceClient FromConnector(Func<TimeSpan, CancellationToken, Task<Stream>> connect) => new(connect);
+
+    /// <summary>A client of a service on another computer: TLS, certificate check, then the password.</summary>
+    public static ServiceClient ForRemote(RemoteTarget target) => new(async (timeout, ct) =>
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(timeout);
+        var tcp = new TcpClient();
+        SslStream? tls = null;
+        try
+        {
+            await tcp.ConnectAsync(target.Host, target.Port, deadline.Token).ConfigureAwait(false);
+            string? seen = null;
+            tls = new SslStream(tcp.GetStream(), leaveInnerStreamOpen: false, (_, certificate, _, _) =>
+            {
+                seen = certificate?.GetCertHashString(HashAlgorithmName.SHA256);
+                return seen is not null && (target.PinnedThumbprint is null || string.Equals(seen, target.PinnedThumbprint, StringComparison.OrdinalIgnoreCase));
+            });
+            await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "netwarden" }, deadline.Token).ConfigureAwait(false);
+            target.OnThumbprint?.Invoke(seen!);
+
+            await MessageFraming.WriteAsync(tls, new IpcMessage(MessageKind.Request, 0, Methods.RemoteAuth,
+                IpcJson.ToElement(new RemoteAuthRequest(target.Password))), deadline.Token).ConfigureAwait(false);
+            var answer = await MessageFraming.ReadAsync(tls, deadline.Token).ConfigureAwait(false);
+            if (answer is null)
+                throw new IpcAuthFailedException("The computer closed the connection.");
+            if (answer.Error is { } refusal)
+                throw new IpcAuthFailedException(refusal);
+            return tls;
+        }
+        catch
+        {
+            if (tls is not null)
+                await tls.DisposeAsync().ConfigureAwait(false);
+            tcp.Dispose();
+            throw;
+        }
+    });
 
     public event Action<string, JsonElement?>? EventReceived;
 
     /// <summary>Raised once when the connection ends, with the error if it ended abnormally.</summary>
     public event Action<Exception?>? Disconnected;
 
-    public bool IsConnected => _pipe is { IsConnected: true } && Volatile.Read(ref _disconnected) == 0;
+    public bool IsConnected => _stream is not null && _stream is not NamedPipeClientStream { IsConnected: false } && Volatile.Read(ref _disconnected) == 0;
 
     public async Task ConnectAsync(TimeSpan timeout, CancellationToken ct = default)
     {
-        if (_pipe is not null)
+        if (_stream is not null)
             throw new InvalidOperationException("Already connected; create a new client to reconnect.");
 
-        var pipe = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-        try
-        {
-            await pipe.ConnectAsync((int)timeout.TotalMilliseconds, ct).ConfigureAwait(false);
-        }
-        catch
-        {
-            await pipe.DisposeAsync().ConfigureAwait(false);
-            throw;
-        }
-
-        _pipe = pipe;
-        _readLoop = Task.Run(() => ReadLoopAsync(pipe, _cts.Token));
+        Stream stream = await _connect(timeout, ct).ConfigureAwait(false);
+        _stream = stream;
+        _readLoop = Task.Run(() => ReadLoopAsync(stream, _cts.Token));
     }
 
     public async Task<TResult?> RequestAsync<TResult>(string method, object? payload = null, CancellationToken ct = default)
@@ -62,7 +111,7 @@ public sealed class ServiceClient : IAsyncDisposable
 
     private async Task<IpcMessage> SendRequestAsync(string method, object? payload, CancellationToken ct)
     {
-        NamedPipeClientStream pipe = _pipe ?? throw new InvalidOperationException("Not connected.");
+        Stream stream = _stream ?? throw new InvalidOperationException("Not connected.");
         if (Volatile.Read(ref _disconnected) != 0)
             throw new IpcDisconnectedException("The connection to the service is closed.");
 
@@ -75,7 +124,7 @@ public sealed class ServiceClient : IAsyncDisposable
             await _writeLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                await MessageFraming.WriteAsync(pipe, request, ct).ConfigureAwait(false);
+                await MessageFraming.WriteAsync(stream, request, ct).ConfigureAwait(false);
             }
             catch (IOException ex)
             {
@@ -101,14 +150,14 @@ public sealed class ServiceClient : IAsyncDisposable
         }
     }
 
-    private async Task ReadLoopAsync(NamedPipeClientStream pipe, CancellationToken ct)
+    private async Task ReadLoopAsync(Stream stream, CancellationToken ct)
     {
         Exception? error = null;
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                IpcMessage? message = await MessageFraming.ReadAsync(pipe, ct).ConfigureAwait(false);
+                IpcMessage? message = await MessageFraming.ReadAsync(stream, ct).ConfigureAwait(false);
                 if (message is null)
                     break;
 
@@ -150,8 +199,8 @@ public sealed class ServiceClient : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _cts.Cancel();
-        if (_pipe is not null)
-            await _pipe.DisposeAsync().ConfigureAwait(false);
+        if (_stream is not null)
+            await _stream.DisposeAsync().ConfigureAwait(false);
         if (_readLoop is not null)
             await _readLoop.ConfigureAwait(false);
         MarkDisconnected(null);

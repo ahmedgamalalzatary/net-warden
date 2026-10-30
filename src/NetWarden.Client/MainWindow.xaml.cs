@@ -43,6 +43,11 @@ public partial class MainWindow : Window
                     SyncNav(page);
                     vm.Page = page;
                 }
+                if (Tabs.SelectedItem == SettingsTab && vm.IsConnected)
+                {
+                    _ = vm.RemoteAdmin.RefreshAsync();
+                    _ = vm.Permissions.RefreshAsync();
+                }
                 if (Tabs.SelectedItem == AppsTab && vm.IsConnected)
                     _ = vm.Apps.RefreshAsync();
                 if (Tabs.SelectedItem == NetworksTab && vm.IsConnected)
@@ -508,6 +513,70 @@ public partial class MainWindow : Window
     }
 
     private static void OpenInBrowser(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+
+    // ----- Remote administration -----
+
+    private void RemoteConnect_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel?.RemoteConnect.Connect(RemotePassword.Password);
+        RemotePassword.Clear();
+    }
+
+    private async void RemoteApply_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+            return;
+        await vm.RemoteAdmin.ApplyAsync(RemoteNewPassword.Password.Length == 0 ? null : RemoteNewPassword.Password);
+        if (vm.RemoteAdmin.Error is null)
+            RemoteNewPassword.Clear();
+    }
+
+    private void PermissionRemove_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is AccessEntry entry)
+            ViewModel?.Permissions.RemoveCommand.Execute(entry);
+    }
+
+    // ----- VirusTotal -----
+
+    private static readonly System.Net.Http.HttpClient VirusTotalHttp = new() { Timeout = TimeSpan.FromSeconds(30) };
+
+    private async void VirusTotal_Click(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender)?.App?.App is not { } app || ViewModel is not { } vm)
+            return;
+        string key = vm.AppSettings.VirusTotalKey;
+        if (key.Length == 0)
+        {
+            ShowError("Enter your VirusTotal API key in Settings first. It's free at virustotal.com.");
+            ShowPage("Settings");
+            return;
+        }
+        if (!vm.IsLocal || !System.IO.File.Exists(app.Path))
+        {
+            ShowError("The file has to be on this computer to be checked.");
+            return;
+        }
+        VirusTotalResult result;
+        try
+        {
+            result = await new VirusTotalClient(VirusTotalHttp).CheckFileAsync(app.Path, key);
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+        {
+            ShowError($"The file can't be read: {ex.Message}");
+            return;
+        }
+        if (result.Link is { } link)
+        {
+            if (MessageBox.Show(this, result.Text + " Open the full report in your browser?", app.DisplayName, MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
+                OpenInBrowser(link);
+        }
+        else
+        {
+            MessageBox.Show(this, result.Text, app.DisplayName, MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
 
     // ----- Connection log and history -----
 

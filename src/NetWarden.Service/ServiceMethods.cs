@@ -39,6 +39,7 @@ public static class ServiceMethods
 
         RegisterActivity(dispatcher, monitor, hostNames);
         RegisterAppsAndNetworks(dispatcher, sp);
+        RegisterAccess(dispatcher, sp);
         RegisterRules(dispatcher, rules, flows, settings, time);
 
         // Resolved lazily: PacketFilterService depends on the IPC server, which depends on this dispatcher.
@@ -114,6 +115,24 @@ public static class ServiceMethods
                 IPAddress.TryParse(request?.Address, out var address)
                     ? hostNames.GetAsync(address)
                     : throw new ArgumentException("Invalid IP address."));
+    }
+
+    private static void RegisterAccess(IpcDispatcher dispatcher, IServiceProvider sp)
+    {
+        // Resolved lazily: both depend on the IPC server, which depends on this dispatcher.
+        RemoteAdmin Remote() => sp.GetRequiredService<RemoteAdmin>();
+        var access = sp.GetRequiredService<AccessList>();
+        dispatcher
+            .Register(Methods.RemoteGet, _ => Task.FromResult(Remote().Status()))
+            .Register<RemoteConfigureRequest, RemoteStatus>(Methods.RemoteConfigure, (r, _) => Task.Run(() => Remote().Configure(Require(r))))
+            .Register(Methods.AccessGet, _ => Task.FromResult(access.Entries.ToList()))
+            .Register<AccessSetRequest, List<AccessEntry>>(Methods.AccessSet, (r, ct) =>
+            {
+                access.Set(Require(r).Entries);
+                // After the answer is on its way: this drops the pipe connection it travels on.
+                _ = Task.Delay(200, CancellationToken.None).ContinueWith(_ => sp.GetRequiredService<IpcServer>().ApplySecurity(), TaskScheduler.Default);
+                return Task.FromResult(access.Entries.ToList());
+            });
     }
 
     private static void RegisterAppsAndNetworks(IpcDispatcher dispatcher, IServiceProvider sp)

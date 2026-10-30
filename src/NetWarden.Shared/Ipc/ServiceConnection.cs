@@ -16,7 +16,9 @@ public enum ConnectionState
 /// </summary>
 public sealed class ServiceConnection : IServiceRequester, IAsyncDisposable
 {
-    private readonly string _pipeName;
+    private readonly Func<ServiceClient> _local;
+    private Func<ServiceClient> _target;
+    private TaskCompletionSource _retargeted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeSpan _connectTimeout;
     private readonly TimeSpan _retryDelay;
     private readonly CancellationTokenSource _cts = new();
@@ -25,7 +27,7 @@ public sealed class ServiceConnection : IServiceRequester, IAsyncDisposable
 
     public ServiceConnection(string pipeName = PipeNames.Default, TimeSpan? connectTimeout = null, TimeSpan? retryDelay = null)
     {
-        _pipeName = pipeName;
+        _target = _local = () => new ServiceClient(pipeName);
         _connectTimeout = connectTimeout ?? TimeSpan.FromSeconds(2);
         _retryDelay = retryDelay ?? TimeSpan.FromSeconds(2);
     }
@@ -37,6 +39,16 @@ public sealed class ServiceConnection : IServiceRequester, IAsyncDisposable
 
     public event Action<ConnectionState>? StateChanged;
     public event Action<string, JsonElement?>? EventReceived;
+
+    /// <summary>Connects to something else from now on, dropping the current connection.</summary>
+    public void UseTarget(Func<ServiceClient> target)
+    {
+        Volatile.Write(ref _target, target);
+        Interlocked.Exchange(ref _retargeted, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
+    }
+
+    /// <summary>Back to the service on this computer.</summary>
+    public void UseLocal() => UseTarget(_local);
 
     public void Start()
     {
@@ -58,7 +70,9 @@ public sealed class ServiceConnection : IServiceRequester, IAsyncDisposable
         while (!ct.IsCancellationRequested)
         {
             SetState(ConnectionState.Connecting);
-            var client = new ServiceClient(_pipeName);
+            Task retargeted = Volatile.Read(ref _retargeted).Task;
+            var client = Volatile.Read(ref _target)();
+            bool waitForNewTarget = false;
             var lost = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             client.Disconnected += _ => lost.TrySetResult();
             client.EventReceived += (m, p) => EventReceived?.Invoke(m, p);
@@ -69,7 +83,13 @@ public sealed class ServiceConnection : IServiceRequester, IAsyncDisposable
                 LastError = null;
                 Volatile.Write(ref _client, client);
                 SetState(ConnectionState.Connected);
-                await lost.Task.WaitAsync(ct).ConfigureAwait(false);
+                await Task.WhenAny(lost.Task, retargeted).WaitAsync(ct).ConfigureAwait(false);
+            }
+            catch (IpcAuthFailedException ex)
+            {
+                // Trying the same password again would only lock this computer out.
+                LastError = ex.Message;
+                waitForNewTarget = true;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -80,11 +100,13 @@ public sealed class ServiceConnection : IServiceRequester, IAsyncDisposable
             }
             catch (UnauthorizedAccessException)
             {
-                LastError = "Access denied. Run NetWarden as administrator.";
+                LastError = "Access denied. Run NetWarden as administrator, or ask an administrator to allow you in Settings > Permissions.";
             }
-            catch (IOException ex)
+            catch (Exception ex) when (ex is IOException or System.Net.Sockets.SocketException or System.Security.Authentication.AuthenticationException or OperationCanceledException)
             {
-                LastError = ex.Message;
+                LastError = ex is System.Security.Authentication.AuthenticationException
+                    ? "That computer's certificate is not the one seen before, so the password was not sent. If it was reinstalled, forget its certificate in Settings."
+                    : ex.Message;
             }
 
             Volatile.Write(ref _client, null);
@@ -93,7 +115,10 @@ public sealed class ServiceConnection : IServiceRequester, IAsyncDisposable
 
             try
             {
-                await Task.Delay(_retryDelay, ct).ConfigureAwait(false);
+                if (retargeted.IsCompleted)
+                    continue;
+                await (waitForNewTarget ? retargeted.WaitAsync(ct) : Task.WhenAny(Task.Delay(_retryDelay, ct), retargeted)).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
             }
             catch (OperationCanceledException)
             {

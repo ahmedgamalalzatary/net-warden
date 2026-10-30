@@ -14,7 +14,8 @@ public sealed class IpcServer : IAsyncDisposable
     private readonly string _pipeName;
     private readonly IpcDispatcher _dispatcher;
     private readonly ILogger _logger;
-    private readonly PipeSecurity? _security;
+    private readonly Func<PipeSecurity?> _security;
+    private CancellationTokenSource _listenerRotation = new();
     private readonly List<Session> _sessions = [];
     private readonly Lock _sessionsLock = new();
     private CancellationTokenSource? _cts;
@@ -22,6 +23,12 @@ public sealed class IpcServer : IAsyncDisposable
     private int _disposed;
 
     public IpcServer(string pipeName, IpcDispatcher dispatcher, ILogger logger, PipeSecurity? security = null)
+        : this(pipeName, dispatcher, logger, () => security)
+    {
+    }
+
+    /// <param name="security">Read for every new pipe instance, so changes apply from <see cref="ApplySecurity"/> on.</param>
+    public IpcServer(string pipeName, IpcDispatcher dispatcher, ILogger logger, Func<PipeSecurity?> security)
     {
         _pipeName = pipeName;
         _dispatcher = dispatcher;
@@ -63,12 +70,33 @@ public sealed class IpcServer : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Makes changed permissions count: the waiting pipe is replaced and everyone connected over the pipe is dropped,
+    /// so whoever lost access is out. Clients reconnect by themselves.
+    /// </summary>
+    public void ApplySecurity()
+    {
+        Interlocked.Exchange(ref _listenerRotation, new CancellationTokenSource()).Cancel();
+        Session[] sessions;
+        lock (_sessionsLock) sessions = _sessions.Where(s => s.Stream is NamedPipeServerStream).ToArray();
+        foreach (var session in sessions)
+            session.Stream.Dispose();
+    }
+
+    /// <summary>Serves one already authenticated client over any stream until it goes away or <paramref name="ct"/> ends.</summary>
+    public async Task ServeAsync(Stream stream, CancellationToken ct)
+    {
+        var session = new Session(stream);
+        lock (_sessionsLock) _sessions.Add(session);
+        await RunSessionAsync(session, ct).ConfigureAwait(false);
+    }
+
     private NamedPipeServerStream CreatePipe() =>
-        _security is null
+        _security() is not { } security
             ? new NamedPipeServerStream(_pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
                 PipeTransmissionMode.Byte, PipeOptions.Asynchronous)
             : NamedPipeServerStreamAcl.Create(_pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
-                PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, _security);
+                PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, security);
 
     private async Task AcceptLoopAsync(NamedPipeServerStream pipe, CancellationToken ct)
     {
@@ -76,11 +104,17 @@ public sealed class IpcServer : IAsyncDisposable
         {
             try
             {
-                await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
+                using var wait = CancellationTokenSource.CreateLinkedTokenSource(ct, Volatile.Read(ref _listenerRotation).Token);
+                await pipe.WaitForConnectionAsync(wait.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
-                break;
+                if (ct.IsCancellationRequested)
+                    break;
+                // Permissions changed: wait on a pipe instance that has them.
+                await pipe.DisposeAsync().ConfigureAwait(false);
+                pipe = CreatePipe();
+                continue;
             }
             catch (IOException ex)
             {
@@ -107,7 +141,7 @@ public sealed class IpcServer : IAsyncDisposable
         {
             while (!ct.IsCancellationRequested)
             {
-                IpcMessage? message = await MessageFraming.ReadAsync(session.Pipe, ct).ConfigureAwait(false);
+                IpcMessage? message = await MessageFraming.ReadAsync(session.Stream, ct).ConfigureAwait(false);
                 if (message is null)
                     break;
                 if (message.Kind != MessageKind.Request)
@@ -126,7 +160,7 @@ public sealed class IpcServer : IAsyncDisposable
         finally
         {
             lock (_sessionsLock) _sessions.Remove(session);
-            await session.Pipe.DisposeAsync().ConfigureAwait(false);
+            await session.Stream.DisposeAsync().ConfigureAwait(false);
             _logger.LogInformation("Client disconnected ({Count} remaining).", ClientCount);
         }
     }
@@ -172,18 +206,18 @@ public sealed class IpcServer : IAsyncDisposable
         lock (_sessionsLock) sessions = [.. _sessions];
         foreach (var session in sessions)
         {
-            await session.Pipe.DisposeAsync().ConfigureAwait(false);
+            await session.Stream.DisposeAsync().ConfigureAwait(false);
             if (session.Run is not null)
                 await session.Run.ConfigureAwait(false);
         }
         _cts.Dispose();
     }
 
-    private sealed class Session(NamedPipeServerStream pipe)
+    private sealed class Session(Stream stream)
     {
         private readonly SemaphoreSlim _writeLock = new(1, 1);
 
-        public NamedPipeServerStream Pipe { get; } = pipe;
+        public Stream Stream { get; } = stream;
         public Task? Run { get; set; }
 
         public async Task SendAsync(IpcMessage message, CancellationToken ct)
@@ -191,7 +225,7 @@ public sealed class IpcServer : IAsyncDisposable
             await _writeLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                await MessageFraming.WriteAsync(Pipe, message, ct).ConfigureAwait(false);
+                await MessageFraming.WriteAsync(Stream, message, ct).ConfigureAwait(false);
             }
             finally
             {

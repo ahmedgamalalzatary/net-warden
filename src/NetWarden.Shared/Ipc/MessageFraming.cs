@@ -24,14 +24,14 @@ public static class MessageFraming
     }
 
     /// <summary>Reads one message, or returns null when the stream ends cleanly between messages.</summary>
-    public static async Task<IpcMessage?> ReadAsync(Stream stream, CancellationToken ct = default)
+    public static async Task<IpcMessage?> ReadAsync(Stream stream, CancellationToken ct = default, int maxBytes = MaxMessageBytes)
     {
         byte[] header = new byte[4];
         if (!await ReadExactAsync(stream, header, allowEof: true, ct).ConfigureAwait(false))
             return null;
 
         int length = BinaryPrimitives.ReadInt32LittleEndian(header);
-        if (length <= 0 || length > MaxMessageBytes)
+        if (length <= 0 || length > maxBytes)
             throw new InvalidDataException($"Invalid message length {length}.");
 
         byte[] body = new byte[length];

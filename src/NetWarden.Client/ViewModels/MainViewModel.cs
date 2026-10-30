@@ -51,6 +51,10 @@ public sealed partial class MainViewModel : ObservableObject
         Stats = new StatsViewModel(connection, settings, saveSettings, ports, () => SettingsFromService, UpdateSettingsAsync);
         Quotas = new QuotasViewModel(connection);
         Apps = new AppsViewModel(connection, settings, saveSettings);
+        RemoteAdmin = new RemoteAdminViewModel(connection);
+        Permissions = new PermissionsViewModel(connection);
+        RemoteConnect = new RemoteConnectViewModel(settings, saveSettings,
+            target => connection.UseTarget(() => ServiceClient.ForRemote(target)), connection.UseLocal);
         Networks = new NetworksViewModel(connection);
         Networks.Reloaded += Stats.SetNetworks;
         Log = new ConnectionLogViewModel(connection);
@@ -99,6 +103,13 @@ public sealed partial class MainViewModel : ObservableObject
     public RateHistory? ComputerHistory => Activity.History.Get(ActivityViewModel.ComputerKey);
     public string RailDownload => ByteFormatter.Rate(Activity.RateIn, Activity.Units);
     public string RailUpload => ByteFormatter.Rate(Activity.RateOut, Activity.Units);
+
+    public RemoteAdminViewModel RemoteAdmin { get; }
+    public PermissionsViewModel Permissions { get; }
+    public RemoteConnectViewModel RemoteConnect { get; }
+
+    /// <summary>Checks that only make sense for files on this computer are hidden while managing another.</summary>
+    public bool IsLocal => !RemoteConnect.IsRemote;
 
     public AppsViewModel Apps { get; }
     public NetworksViewModel Networks { get; }
@@ -497,7 +508,7 @@ public sealed partial class MainViewModel : ObservableObject
                 SettingsFromService = null;
                 break;
             case ConnectionState.Connected:
-                StatusText = "Connected";
+                StatusText = RemoteConnect.IsRemote ? $"Connected to {RemoteConnect.Host}" : "Connected";
                 await LoadAsync();
                 break;
         }

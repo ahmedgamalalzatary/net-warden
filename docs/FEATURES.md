@@ -80,10 +80,10 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 11.5 Localization: language files, right-to-left, Arabic for navigation, Settings and common actions; other text falls back to English
 
 ## Phase 12 - Advanced
-- [ ] 12.1 Remote administration (TCP, connect to another machine)
-- [ ] 12.2 Permissions: user/group allow/deny access to the service
-- [ ] 12.3 Public API / PowerShell usage
-- [ ] 12.4 VirusTotal file checks (API key)
+- [x] 12.1 Remote administration (TCP, connect to another machine)
+- [x] 12.2 Permissions: user/group allow/deny access to the service
+- [x] 12.3 Public API / PowerShell usage
+- [x] 12.4 VirusTotal file checks (API key)
 
 ## Out of scope
 Licensing/registration, version checker, NetLimiter 4 stats import.

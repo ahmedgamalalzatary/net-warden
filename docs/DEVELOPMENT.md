@@ -36,7 +36,7 @@ NetWarden.Service (LocalSystem)
         |       -> StatsDatabase  %ProgramData%\NetWarden\stats.db (SQLite), written every 60 s
         '-- SettingsService  %ProgramData%\NetWarden\settings.json (+ .bak)
 ```
-The pipe only admits Administrators and SYSTEM, so the client requires elevation.
+The pipe admits Administrators, SYSTEM and whoever Settings > Permissions allows.
 
 ## Common tasks
 ```powershell
@@ -88,6 +88,9 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 | `networks.list` / `networks.delete` | - / `DeleteNetworkRequest` | `NetworkView[]` / `true` |
 | `filters.ensure` | `EnsureFilterRequest` | the filter with exactly those functions |
 | `geo.lookup` / `whois.lookup` | `AddressRequest` | `GeoInfo` or null / text |
+| `remote.get` / `remote.configure` | - / `RemoteConfigureRequest` | `RemoteStatus` |
+| `remote.auth` | `RemoteAuthRequest`, TCP only, first message | `true` |
+| `access.get` / `access.set` | - / `AccessSetRequest` | `AccessEntry[]` |
 | `quotas.status` | - | `QuotaStatus[]` |
 | `quotas.reset` / `quotas.initFromStats` | `QuotaRequest { ruleId }` | `true` |
 
@@ -248,6 +251,20 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 - ETW delivers in ~1 s batches, so rates are averaged over the last two 1 s ticks.
 - UDP is keyed by (process, local port): sockets bind 0.0.0.0 while events carry the real address.
 - The ETW session is named `NetWarden-Traffic`; tests use unique names so they never steal the service's session.
+
+## Remote, permissions and API notes
+- `RemoteAdmin` (off by default, `remote.json`): TLS on TCP with a self-signed ECDSA certificate (`remote-certificate.bin`, encrypted with
+  DPAPI for the service's account). The first message must be `remote.auth`, at most 4 KB, within 10 s, at most 16 logons at once.
+  Passwords are PBKDF2-SHA256 with a salt, at least 8 characters; 5 failures lock an address for 5 minutes. The status never carries the hash.
+- Clients pin the certificate on first contact (`KnownHosts`); another one is refused before the password is sent. A refused
+  password stops `ServiceConnection` retrying, so it can't lock itself out. The password is never saved on the client.
+- It doesn't touch Windows Firewall: opening the port is the owner's decision. Tests bind loopback (`RemoteBindAddress`).
+- `AccessList` (`access.json`) builds the pipe's ACL; Administrators and SYSTEM can't be listed. `ApplySecurity` replaces the waiting
+  pipe and drops pipe clients, so a removed user is out. The client's manifest is `highestAvailable`, so admins elevate and allowed
+  standard users run unelevated. Allowed users get the whole API: there are no read-only roles.
+- Not tested from a real non-admin account: the tests run elevated and only check the ACL that gets built.
+- `scripts/NetWarden.psm1` speaks the protocol itself because Windows PowerShell can't load .NET 10 assemblies. See `API.md`.
+- VirusTotal (`VirusTotalClient`) only sends the SHA-256, when asked, with the user's own key (DPAPI in client.json). It never uploads a file.
 
 ## Shell notes
 - `MainWindow` has a fixed rail (`Nav`, master switches, live meter) and a `TabControl` used only as a pager (`Pager` style).

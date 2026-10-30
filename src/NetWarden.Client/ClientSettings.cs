@@ -56,4 +56,12 @@ public sealed class ClientSettings
     public bool RunOnStartup { get; set; }
     public bool Notifications { get; set; } = true;
     public List<NetWarden.Client.Services.HotkeyBinding> Hotkeys { get; set; } = [];
+
+    /// <summary>VirusTotal API key, encrypted for this Windows user.</summary>
+    public string? VirusTotalKey { get; set; }
+    public string LastRemoteHost { get; set; } = "";
+    public int LastRemotePort { get; set; } = 5317;
+
+    /// <summary>"host:port" to the certificate seen the first time.</summary>
+    public Dictionary<string, string> KnownHosts { get; set; } = [];
 }
