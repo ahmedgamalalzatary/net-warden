@@ -32,6 +32,12 @@ public static class Methods
     public const string StatsDelete = "stats.delete";
     public const string StatsCompact = "stats.compact";
 
+    public const string StatsHistory = "stats.history";
+
+    public const string ConnectionLogGet = "connectionlog.get";
+    public const string ConnectionLogSetRunning = "connectionlog.setRunning";
+    public const string ConnectionLogClear = "connectionlog.clear";
+
     public const string QuotasStatus = "quotas.status";
     public const string QuotasReset = "quotas.reset";
     public const string QuotasInitFromStats = "quotas.initFromStats";

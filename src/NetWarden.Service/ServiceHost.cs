@@ -66,6 +66,7 @@ public static class ServiceHost
         // Monitoring
         services.AddSingleton<ISocketTable, SocketTable>();
         services.AddSingleton(_ => new HostNameCache());
+        services.AddSingleton(sp => new ConnectionLog(sp.GetRequiredService<DnsMap>().Lookup));
         services.AddSingleton(sp => new TrafficMonitor(
             sp.GetRequiredService<ISocketTable>(),
             sp.GetRequiredService<AppIdentityResolver>().Resolve,

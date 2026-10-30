@@ -81,6 +81,9 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 | `stats.info` | - | `StatsInfo` (file, size, records, apps, first/last, geo database date) |
 | `stats.delete` | `StatsDeleteRequest` (from / to / app, all optional) | number of records deleted |
 | `stats.compact` | - | `StatsInfo` after roll-up, cleanup and VACUUM |
+| `stats.history` | `ConnectionHistoryQuery` | `ConnectionHistoryRow[]`, most recent first |
+| `connectionlog.get` | `ConnectionLogRequest { afterId }` | `ConnectionLogPage` |
+| `connectionlog.setRunning` / `connectionlog.clear` | `ConnectionLogRunning` / - | `true` |
 | `quotas.status` | - | `QuotaStatus[]` |
 | `quotas.reset` / `quotas.initFromStats` | `QuotaRequest { ruleId }` | `true` |
 
@@ -182,6 +185,15 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
   now. Double-clicking an app narrows the view to it and lists its hosts. CSV exports carry raw bytes, a BOM
   for Excel, and a leading `'` on text a spreadsheet would treat as a formula.
 - Live check: `StatsLiveTests` (admin) sends 500 KB over loopback through real ETW and finds it in `stats.query`.
+
+## Connection log and history notes
+- `ConnectionLog` compares activity snapshots (1 s): a new connection key is Connect, Accept or Listen; a key gone or in state
+  "Closed" is Closed. Connections shorter than a tick and flows the socket table never shows aren't seen. The first snapshot is a baseline.
+- The blocker reports each denied attempt and each denied Ask answer as Blocked. "Allowed" means the connection simply appears.
+- The newest 10 000 entries stay in memory and don't survive a restart. Stopped means nothing is recorded, but snapshots are still followed.
+- The client asks `connectionlog.get` with its last seen id, only while the Log tab is shown.
+- History (`stats.history`) reads `stats.db`, grouped by app, host, port and protocol, so it has what statistics saved: minute (later
+  hour) accuracy, and only the zones the Save toggles keep. Open it for one app from the Activity row's menu.
 
 ## Quota notes
 - Rule kind `Quota`: `QuotaBytes`, `QuotaReset` (a `TimeSchedule`; null = never) and the overflow fields. A quota counts all

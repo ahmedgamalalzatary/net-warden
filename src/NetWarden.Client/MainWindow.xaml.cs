@@ -32,6 +32,10 @@ public partial class MainWindow : Window
                 vm.IsPrioritiesTabVisible = Tabs.SelectedItem == PrioritiesTab;
                 vm.IsStatsTabVisible = Tabs.SelectedItem == StatsTab;
                 vm.IsQuotasTabVisible = Tabs.SelectedItem == QuotasTab;
+                vm.IsLogTabVisible = Tabs.SelectedItem == LogTab;
+                vm.IsHistoryTabVisible = Tabs.SelectedItem == HistoryTab;
+                if (vm.IsLogTabVisible && vm.IsConnected)
+                    _ = vm.Log.RefreshAsync();
             }
         };
     }
@@ -84,6 +88,9 @@ public partial class MainWindow : Window
                     break;
                 case "expand":
                     item.IsEnabled = row is { IsApp: true, HasChildren: true };
+                    break;
+                case "history":
+                    item.IsEnabled = row.IsApp && vm.IsConnected;
                     break;
                 case "kill":
                     int n = vm.Activity.KillableConnections(row).Count;
@@ -229,6 +236,22 @@ public partial class MainWindow : Window
         if (!string.IsNullOrEmpty(message))
             MessageBox.Show(this, message, "NetWarden", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
+
+    // ----- Connection log and history -----
+
+    private async void ShowHistory_Click(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender)?.App?.App is not { } app || ViewModel is not { } vm)
+            return;
+        Tabs.SelectedItem = HistoryTab;
+        await vm.History.ShowAppAsync(app);
+    }
+
+    private void LogExport_Click(object sender, RoutedEventArgs e) =>
+        ExportCsv(_ => $"netwarden-connection-log-{DateTime.Now:yyyy-MM-dd-HHmm}.csv", vm => vm.Log.Csv());
+
+    private void HistoryExport_Click(object sender, RoutedEventArgs e) =>
+        ExportCsv(_ => $"netwarden-connection-history-{DateTime.Now:yyyy-MM-dd}.csv", vm => vm.History.Csv());
 
     // ----- Quotas -----
 

@@ -51,6 +51,9 @@ public sealed class Blocker : IPacketProcessor
     /// <summary>Raised (outside the lock) when a new Ask request is created.</summary>
     public event Action<BlockerRequest>? RequestCreated;
 
+    /// <summary>Raised once per denied connection attempt or denied Ask request.</summary>
+    public event Action<BlockedConnection>? ConnectionBlocked;
+
     public IReadOnlyList<BlockerRequest> Pending
     {
         get { lock (_lock) return _pending.Values.Select(p => p.Request).OrderBy(r => r.Created).ToList(); }
@@ -62,6 +65,7 @@ public sealed class Blocker : IPacketProcessor
     public PacketVerdict Process(in PacketInfo packet, ReadOnlySpan<byte> data, in WinDivertAddress address)
     {
         BlockerRequest? created = null;
+        BlockedConnection? blocked = null;
         PacketVerdict verdict;
         lock (_lock)
         {
@@ -81,13 +85,15 @@ public sealed class Blocker : IPacketProcessor
             }
             else
             {
-                (verdict, created) = Decide(packet, data, address, now, generation);
+                (verdict, created, blocked) = Decide(packet, data, address, now, generation);
             }
         }
         if (verdict == PacketVerdict.Drop)
             Interlocked.Increment(ref _dropped);
         if (created is not null)
             RequestCreated?.Invoke(created);
+        if (blocked is not null)
+            ConnectionBlocked?.Invoke(blocked);
         return verdict;
     }
 
@@ -106,26 +112,29 @@ public sealed class Blocker : IPacketProcessor
         return state.Action == FirewallAction.Deny ? PacketVerdict.Drop : PacketVerdict.Pass;
     }
 
-    private (PacketVerdict, BlockerRequest?) Decide(in PacketInfo packet, ReadOnlySpan<byte> data, in WinDivertAddress address,
+    private (PacketVerdict, BlockerRequest?, BlockedConnection?) Decide(in PacketInfo packet, ReadOnlySpan<byte> data, in WinDivertAddress address,
         DateTimeOffset now, long generation)
     {
         // Unknown owners (e.g. a SYN to a closed port) pass: the stack handles them, and
         // failing open is safer than cutting off traffic we cannot attribute.
         if (_owners.FindOwner(packet) is not { } pid)
-            return (PacketVerdict.Pass, null);
+            return (PacketVerdict.Pass, null, null);
         ConnectionKind kind = packet.Outbound ? ConnectionKind.Connect : ConnectionKind.Accept;
         var flow = _contexts.Create(pid, packet.Protocol, kind, packet.LocalAddress, packet.LocalPort,
             packet.RemoteAddress, packet.RemotePort);
         if (flow is null)
-            return (PacketVerdict.Pass, null);
+            return (PacketVerdict.Pass, null, null);
 
         var settings = _settings();
         var decision = _rules().Evaluate(flow, settings.DefaultFirewallIn, settings.DefaultFirewallOut, now);
         var state = new FlowState { Action = decision.Firewall, Generation = generation, LastSeen = now };
         _flows[packet.Flow] = state;
 
+        if (decision.Firewall == FirewallAction.Deny)
+            return (PacketVerdict.Drop, null, new BlockedConnection(_contexts.ResolveApp(pid)!, pid, packet.Protocol,
+                packet.LocalAddress.ToString(), packet.LocalPort, packet.RemoteAddress.ToString(), packet.RemotePort, flow.RemoteHost, now));
         if (decision.Firewall != FirewallAction.Ask)
-            return (decision.Firewall == FirewallAction.Deny ? PacketVerdict.Drop : PacketVerdict.Pass, null);
+            return (PacketVerdict.Pass, null, null);
 
         // Group connections that would get the same answer (browsers open several at once).
         var key = (flow.AppId, kind, packet.Protocol, packet.RemoteAddress, packet.RemotePort);
@@ -145,7 +154,7 @@ public sealed class Blocker : IPacketProcessor
         existing.Flows.Add(packet.Flow);
         state.RequestId = existing.Request.Id;
         state.Held.Add(new HeldPacket(data.ToArray(), address));
-        return (PacketVerdict.Hold, created);
+        return (PacketVerdict.Hold, created, null);
     }
 
     /// <summary>Answers a request; returns the packets to re-inject (empty when denied or unknown).</summary>
@@ -155,10 +164,15 @@ public sealed class Blocker : IPacketProcessor
             return ResolveLocked(requestId, allow);
     }
 
+    private void ReportDenied(BlockerRequest r) =>
+        ConnectionBlocked?.Invoke(new BlockedConnection(r.App, r.ProcessId, r.Protocol, r.LocalAddress, r.LocalPort, r.RemoteAddress, r.RemotePort, r.RemoteHost, _time.GetUtcNow()));
+
     private IReadOnlyList<HeldPacket> ResolveLocked(Guid requestId, bool allow)
     {
         if (!_pending.Remove(requestId, out var pending))
             return [];
+        if (!allow)
+            ReportDenied(pending.Request);
         var release = new List<HeldPacket>();
         foreach (var id in pending.Flows)
         {

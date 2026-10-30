@@ -44,6 +44,7 @@
         <ContextMenu x:Key="RowMenu" Opened="RowMenu_Opened">
             <MenuItem Tag="rule" Header="Add rule..." Click="AddRuleForRow_Click" FontWeight="SemiBold" />
             <MenuItem Tag="expand" Header="Expand / collapse" Click="Expand_Click" />
+            <MenuItem Tag="history" Header="Connection history" Click="ShowHistory_Click" />
             <Separator />
             <MenuItem Tag="kill" Header="Kill connection(s)" Click="Kill_Click" />
             <MenuItem Tag="hide" Header="Hide app" Click="Hide_Click" />
@@ -709,6 +710,73 @@
                     </Border>
                     </Grid>
                 </Grid>
+            </DockPanel>
+        </TabItem>
+
+        <!-- Connection log -->
+        <TabItem x:Name="LogTab" Header="Log" Padding="14,4">
+            <DockPanel Margin="8" DataContext="{Binding Log}">
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False">
+                    <Button Content="{Binding ToggleText}" Width="70" Padding="0,3" Command="{Binding ToggleRunningCommand}" />
+                    <Button Content="Clear" Padding="10,3" Margin="8,0,0,0" Command="{Binding ClearCommand}" />
+                    <TextBox Width="240" Margin="12,0,0,0" VerticalContentAlignment="Center"
+                             Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search apps, addresses, hosts and events" />
+                    <TextBlock Text="{Binding LastError}" Foreground="{DynamicResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                    <Button DockPanel.Dock="Right" Content="Export CSV..." Padding="10,3" Click="LogExport_Click" />
+                </DockPanel>
+                <DataGrid x:Name="LogGrid" ItemsSource="{Binding Entries}" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single"
+                          HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="22" Background="{DynamicResource PanelBackground}"
+                          BorderBrush="{DynamicResource BorderBrush}" AlternatingRowBackground="{DynamicResource AltRowBackground}"
+                          EnableRowVirtualization="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="80" />
+                        <DataGridTextColumn Header="Event" Binding="{Binding Event}" Width="75" />
+                        <DataGridTextColumn Header="App" Binding="{Binding App}" Width="*" MinWidth="150" />
+                        <DataGridTextColumn Header="PID" Binding="{Binding ProcessId}" Width="60" />
+                        <DataGridTextColumn Header="Protocol" Binding="{Binding Protocol}" Width="70" />
+                        <DataGridTextColumn Header="Local" Binding="{Binding Local}" Width="170" />
+                        <DataGridTextColumn Header="Remote" Binding="{Binding Remote}" Width="170" />
+                        <DataGridTextColumn Header="Host" Binding="{Binding Host}" Width="220" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </TabItem>
+
+        <!-- Connection history -->
+        <TabItem x:Name="HistoryTab" Header="History" Padding="14,4">
+            <DockPanel Margin="8" DataContext="{Binding History}">
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False">
+                    <ComboBox Width="90" ItemsSource="{Binding Ranges}" SelectedItem="{Binding Range}" />
+                    <TextBox Width="240" Margin="12,0,0,0" VerticalContentAlignment="Center"
+                             Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search apps, addresses, hosts and ports" />
+                    <Border Margin="12,0,0,0" Padding="8,2,4,2" CornerRadius="10" Background="{DynamicResource SelectionBackground}"
+                            Visibility="{Binding HasApp, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding AppText}" VerticalAlignment="Center" />
+                            <Button Content="✕" Padding="5,0" Margin="6,0,0,0" Command="{Binding ClearAppCommand}"
+                                    Background="Transparent" BorderThickness="0" ToolTip="Show all apps" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="{Binding LastError}" Foreground="{DynamicResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                    <Button DockPanel.Dock="Right" Content="Export CSV..." Padding="10,3" Click="HistoryExport_Click" />
+                    <Button DockPanel.Dock="Right" Content="Refresh" Padding="10,3" Margin="0,0,8,0" Command="{Binding RefreshCommand}" />
+                </DockPanel>
+                <DataGrid x:Name="HistoryGrid" ItemsSource="{Binding Rows}" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single"
+                          HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="22" Background="{DynamicResource PanelBackground}"
+                          BorderBrush="{DynamicResource BorderBrush}" AlternatingRowBackground="{DynamicResource AltRowBackground}"
+                          EnableRowVirtualization="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="App" Binding="{Binding App}" Width="*" MinWidth="150" />
+                        <DataGridTextColumn Header="Address" Binding="{Binding Address}" Width="150" />
+                        <DataGridTextColumn Header="Host" Binding="{Binding Host}" Width="220" />
+                        <DataGridTextColumn Header="Port" Binding="{Binding Port}" Width="60" />
+                        <DataGridTextColumn Header="Protocol" Binding="{Binding Protocol}" Width="70" />
+                        <DataGridTextColumn Header="Download" Binding="{Binding In}" SortMemberPath="Row.In" Width="90" ElementStyle="{StaticResource NumberCell}" />
+                        <DataGridTextColumn Header="Upload" Binding="{Binding Out}" SortMemberPath="Row.Out" Width="90" ElementStyle="{StaticResource NumberCell}" />
+                        <DataGridTextColumn Header="First transfer" Binding="{Binding First}" SortMemberPath="Row.First" Width="130" />
+                        <DataGridTextColumn Header="Last transfer" Binding="{Binding Last}" SortMemberPath="Row.Last" Width="130" />
+                    </DataGrid.Columns>
+                </DataGrid>
             </DockPanel>
         </TabItem>
 

@@ -44,7 +44,7 @@ public sealed class ServiceHostTests : IAsyncLifetime
 
         Assert.NotNull(info);
         Assert.Equal(Environment.ProcessId, info.ProcessId);
-        Assert.Equal("0.8.0", info.Version);
+        Assert.Equal("0.9.0", info.Version);
         Assert.False(info.IsWindowsService);
         Assert.Equal(Environment.MachineName, info.MachineName);
         Assert.True(info.StartedAt <= DateTimeOffset.UtcNow);

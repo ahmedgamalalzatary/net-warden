@@ -53,7 +53,22 @@ public static class ServiceMethods
             .Register<StatsQuery, StatsResult>(Methods.StatsQuery, (q, _) => Task.Run(() => stats.Query(Require(q))))
             .Register(Methods.StatsInfo, _ => Task.Run(stats.Info))
             .Register<StatsDeleteRequest, long>(Methods.StatsDelete, (r, _) => Task.Run(() => stats.Delete(Require(r))))
-            .Register(Methods.StatsCompact, _ => Task.Run(stats.Compact));
+            .Register(Methods.StatsCompact, _ => Task.Run(stats.Compact))
+            .Register<ConnectionHistoryQuery, List<ConnectionHistoryRow>>(Methods.StatsHistory, (q, _) => Task.Run(() => stats.History(Require(q)).ToList()));
+
+        var log = sp.GetRequiredService<ConnectionLog>();
+        dispatcher
+            .Register<ConnectionLogRequest, ConnectionLogPage>(Methods.ConnectionLogGet, (r, _) => Task.FromResult(log.Get(Require(r).AfterId)))
+            .Register<ConnectionLogRunning, bool>(Methods.ConnectionLogSetRunning, (r, _) =>
+            {
+                log.SetRunning(Require(r).IsRunning);
+                return Task.FromResult(true);
+            })
+            .Register(Methods.ConnectionLogClear, _ =>
+            {
+                log.Clear();
+                return Task.FromResult(true);
+            });
 
         // Resolved lazily like the packet filter: QuotaService depends on the IPC server too.
         var quotas = sp.GetRequiredService<QuotaTracker>();

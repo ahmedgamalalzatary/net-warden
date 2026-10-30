@@ -203,6 +203,35 @@ public sealed class StatsDatabase : IDisposable
         }
     }
 
+    /// <summary>What apps exchanged with each host, port and protocol, most recent first.</summary>
+    public IReadOnlyList<ConnectionHistoryRow> History(ConnectionHistoryQuery query)
+    {
+        lock (_lock)
+        {
+            using var cmd = Command("""
+                SELECT a.app_id, a.name, h.address, h.name, t.port, t.protocol, SUM(t.bytes_in), SUM(t.bytes_out), MIN(t.slot), MAX(t.slot)
+                FROM traffic t
+                JOIN apps a ON a.id = t.app JOIN hosts h ON h.id = t.host
+                WHERE t.slot >= $from AND t.slot < $to AND ($app IS NULL OR a.app_id = $app)
+                GROUP BY t.app, t.host, t.port, t.protocol
+                ORDER BY MAX(t.slot) DESC
+                LIMIT $max
+                """);
+            cmd.Parameters.AddWithValue("$from", query.From?.ToUnixTimeSeconds() ?? long.MinValue);
+            cmd.Parameters.AddWithValue("$to", query.To.ToUnixTimeSeconds());
+            cmd.Parameters.AddWithValue("$app", (object?)query.AppId ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$max", Math.Clamp(query.MaxRows, 1, 100_000));
+            var rows = new List<ConnectionHistoryRow>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                rows.Add(new ConnectionHistoryRow(reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                    reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetInt32(4), (TransportProtocol)reader.GetInt32(5),
+                    reader.GetInt64(6), reader.GetInt64(7),
+                    DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64(8)), DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64(9))));
+            return rows;
+        }
+    }
+
     /// <summary>Deletes the records a request selects; returns how many there were.</summary>
     public long Delete(StatsDeleteRequest request)
     {

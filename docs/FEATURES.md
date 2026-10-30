@@ -62,8 +62,8 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 8.2 Once, every day, selected days, day of month
 
 ## Phase 9 - Connection log & history
-- [ ] 9.1 Realtime connection log: connect/accept/listen/closed, allowed/blocked, start/stop/clear, export
-- [ ] 9.2 Connection history per app: IP, hostname, port, data in/out, first/last transfer, export CSV
+- [x] 9.1 Realtime connection log: connect/accept/listen/closed, allowed/blocked, start/stop/clear, export
+- [x] 9.2 Connection history per app: IP, hostname, port, data in/out, first/last transfer, export CSV
 
 ## Phase 10 - Apps, networks, geo
 - [ ] 10.1 Apps list (apps / services / store packages), installed/uninstalled, delete apps

@@ -1,5 +1,6 @@
 using NetWarden.Core.Ipc;
 using NetWarden.Core.Monitoring;
+using NetWarden.Core.Packets;
 using NetWarden.Shared.Ipc;
 
 namespace NetWarden.Service;
@@ -8,6 +9,8 @@ namespace NetWarden.Service;
 public sealed class ActivityService(
     ITrafficSource source,
     TrafficMonitor monitor,
+    ConnectionLog log,
+    Blocker blocker,
     IpcServer server,
     ILogger<ActivityService> logger) : BackgroundService
 {
@@ -16,6 +19,7 @@ public sealed class ActivityService(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         source.Traffic += e => monitor.Record(e);
+        blocker.ConnectionBlocked += log.AddBlocked;
         try
         {
             source.Start();
@@ -33,6 +37,7 @@ public sealed class ActivityService(
             try
             {
                 var snapshot = monitor.Tick();
+                log.Update(snapshot);
                 if (server.ClientCount > 0)
                     await server.BroadcastAsync(Events.ActivitySnapshot, snapshot).ConfigureAwait(false);
             }

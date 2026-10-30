@@ -84,6 +84,12 @@ public sealed class StatsService(
         return database.Flows(from, to);
     }
 
+    public IReadOnlyList<ConnectionHistoryRow> History(ConnectionHistoryQuery query)
+    {
+        Flush();
+        return database.History(query);
+    }
+
     public StatsInfo Info()
     {
         Flush();

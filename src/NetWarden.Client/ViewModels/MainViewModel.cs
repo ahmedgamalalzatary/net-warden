@@ -48,6 +48,8 @@ public sealed partial class MainViewModel : ObservableObject
         Priorities = new PrioritiesViewModel(() => SettingsFromService, UpdateSettingsAsync);
         Stats = new StatsViewModel(connection, settings, saveSettings, ports, () => SettingsFromService, UpdateSettingsAsync);
         Quotas = new QuotasViewModel(connection);
+        Log = new ConnectionLogViewModel(connection);
+        History = new ConnectionHistoryViewModel(connection, () => DateTimeOffset.Now);
         Activity.Updated += () =>
         {
             OnPropertyChanged(nameof(ChartHistory));
@@ -62,6 +64,8 @@ public sealed partial class MainViewModel : ObservableObject
                 _ = Stats.RefreshAsync();
             if (IsQuotasTabVisible && IsConnected)
                 _ = Quotas.RefreshAsync();
+            if (IsLogTabVisible && IsConnected)
+                _ = Log.RefreshAsync();
         };
         Rules.Reloaded += RefreshRuleStates;
         Blocker.PropertyChanged += (_, e) =>
@@ -81,6 +85,27 @@ public sealed partial class MainViewModel : ObservableObject
     public PrioritiesViewModel Priorities { get; }
     public StatsViewModel Stats { get; }
     public QuotasViewModel Quotas { get; }
+    public ConnectionLogViewModel Log { get; }
+    public ConnectionHistoryViewModel History { get; }
+
+    /// <summary>Set by the window while the Log tab is selected; the log is followed only then.</summary>
+    public bool IsLogTabVisible { get; set; }
+
+    /// <summary>Set by the window when the History tab is selected, which loads it.</summary>
+    public bool IsHistoryTabVisible
+    {
+        get => _isHistoryTabVisible;
+        set
+        {
+            if (_isHistoryTabVisible == value)
+                return;
+            _isHistoryTabVisible = value;
+            if (value && IsConnected)
+                _ = History.RefreshAsync();
+        }
+    }
+
+    private bool _isHistoryTabVisible;
 
     /// <summary>A quota with an alert was exceeded.</summary>
     public event Action<QuotaAlert>? QuotaExceeded;

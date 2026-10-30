@@ -265,6 +265,46 @@ public sealed class BlockerTests : IDisposable
 
     public void Dispose() => _dir.Dispose();
 
+    [Fact]
+    public void Denied_connection_is_reported_once_per_flow()
+    {
+        var blocked = new List<BlockedConnection>();
+        _blocker.ConnectionBlocked += blocked.Add;
+        BrowserRule(FirewallAction.Deny);
+
+        Send(Syn());
+        Send(Syn());
+
+        var entry = Assert.Single(blocked);
+        Assert.Equal((Browser.Id, 100, "1.1.1.1", 443), (entry.App.Id, entry.ProcessId, entry.RemoteAddress, entry.RemotePort));
+    }
+
+    [Fact]
+    public void Allowed_connection_is_not_reported()
+    {
+        var blocked = new List<BlockedConnection>();
+        _blocker.ConnectionBlocked += blocked.Add;
+        BrowserRule(FirewallAction.Allow);
+
+        Send(Syn());
+
+        Assert.Empty(blocked);
+    }
+
+    [Fact]
+    public void Ask_answered_with_deny_is_reported()
+    {
+        var blocked = new List<BlockedConnection>();
+        _blocker.ConnectionBlocked += blocked.Add;
+        BrowserRule(FirewallAction.Ask);
+        Send(Syn());
+        Assert.Empty(blocked);
+
+        _blocker.Resolve(_requests[0].Id, allow: false);
+
+        Assert.Equal("1.1.1.1", Assert.Single(blocked).RemoteAddress);
+    }
+
     private PacketVerdict Send(byte[] raw, bool outbound = true, int? owner = 100)
     {
         var info = PacketParser.Parse(raw, outbound)!.Value;
