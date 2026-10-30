@@ -126,7 +126,8 @@ public sealed class ServiceClient : IAsyncDisposable
             {
                 await MessageFraming.WriteAsync(stream, request, ct).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+            // Closing the stream under a write aborts it; only the caller's own token means "cancelled".
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
             {
                 throw new IpcDisconnectedException("The connection to the service is closed.", ex);
             }
