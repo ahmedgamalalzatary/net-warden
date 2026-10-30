@@ -5,6 +5,14 @@ using Microsoft.Win32;
 
 namespace NetWarden.Client.Services;
 
+public enum AccentColor
+{
+    Harbour,
+    Ocean,
+    Forest,
+    Plum,
+}
+
 public enum AppTheme
 {
     /// <summary>Follow the Windows "app mode" setting, live.</summary>
@@ -73,6 +81,24 @@ public sealed class ThemeManager
         }
     }
 
+    private AccentColor? _accent;
+
+    /// <summary>Colors buttons and switches; Harbour is the theme's own accent.</summary>
+    public void ApplyAccent(AccentColor accent)
+    {
+        _accent = accent;
+        _app.Resources.Remove("AccentBrush");
+        string? color = accent switch
+        {
+            AccentColor.Ocean => IsDark ? "#60A5FA" : "#2563EB",
+            AccentColor.Forest => IsDark ? "#4ADE80" : "#15803D",
+            AccentColor.Plum => IsDark ? "#E879F9" : "#86198F",
+            _ => null,
+        };
+        if (color is not null)
+            _app.Resources["AccentBrush"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color));
+    }
+
     private void Show(bool dark)
     {
 #pragma warning disable WPF0001 // ThemeMode is marked experimental; it is the supported way to get Fluent light/dark.
@@ -89,6 +115,8 @@ public sealed class ThemeManager
         merged.Add(colors);
         merged.Add(CompactStyles());
         IsDark = dark;
+        if (_accent is { } accent)
+            ApplyAccent(accent);
         Changed?.Invoke();
     }
 
@@ -129,8 +157,36 @@ public sealed class ThemeManager
         selected.Setters.Add(new Setter(Control.BorderBrushProperty, new DynamicResourceExtension("SelectionBackground")));
         selected.Setters.Add(new Setter(Control.ForegroundProperty, new DynamicResourceExtension("TextBrush")));
         cell.Triggers.Add(selected);
-        Add(typeof(DataGrid), (DataGrid.ColumnHeaderStyleProperty, header), (DataGrid.CellStyleProperty, cell));
+        cell.Setters.Add(new Setter(Control.TemplateProperty, CenteredCellTemplate()));
+        Add(typeof(DataGrid), (DataGrid.ColumnHeaderStyleProperty, header), (DataGrid.CellStyleProperty, cell),
+            (DataGrid.RowBackgroundProperty, new DynamicResourceExtension("PanelBackground")),
+            (DataGrid.AlternatingRowBackgroundProperty, new DynamicResourceExtension("AltRowBackground")),
+            (DataGrid.BackgroundProperty, new DynamicResourceExtension("PanelBackground")),
+            (DataGrid.ForegroundProperty, new DynamicResourceExtension("TextBrush")));
+        // Rows and cells take their selection color from the system brushes unless told otherwise.
+        var gridStyle = (Style)styles[typeof(DataGrid)];
+        if (_app.TryFindResource("SelectionBackground") is System.Windows.Media.Brush selection
+            && _app.TryFindResource("TextBrush") is System.Windows.Media.Brush text)
+        {
+            gridStyle.Resources[SystemColors.HighlightBrushKey] = selection;
+            gridStyle.Resources[SystemColors.HighlightTextBrushKey] = text;
+            gridStyle.Resources[SystemColors.InactiveSelectionHighlightBrushKey] = selection;
+            gridStyle.Resources[SystemColors.InactiveSelectionHighlightTextBrushKey] = text;
+        }
         return styles;
+    }
+
+    /// <summary>Every cell centers its content, so text, numbers and controls in a row share a line.</summary>
+    private static ControlTemplate CenteredCellTemplate()
+    {
+        var border = new FrameworkElementFactory(typeof(Border));
+        border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
+        border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
+        border.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Control.BorderThicknessProperty));
+        var content = new FrameworkElementFactory(typeof(ContentPresenter));
+        content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        border.AppendChild(content);
+        return new ControlTemplate(typeof(DataGridCell)) { VisualTree = border };
     }
 
     private static Style? Setting(Style? style, DependencyProperty property)

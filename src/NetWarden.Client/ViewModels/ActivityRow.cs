@@ -65,6 +65,10 @@ public sealed partial class ActivityRow : ObservableObject
     [ObservableProperty]
     private bool _isLimitedOut;
 
+    /// <summary>What applies to this app, in words, for the Rules column.</summary>
+    [ObservableProperty]
+    private string _ruleStatus = "";
+
     /// <summary>The quick-limit value in KB/s, shown even while the limit is off.</summary>
     [ObservableProperty]
     private string _limitInText = "";

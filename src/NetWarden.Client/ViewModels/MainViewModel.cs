@@ -43,19 +43,24 @@ public sealed partial class MainViewModel : ObservableObject
         _saveSettings = saveSettings;
         Activity = new ActivityViewModel(connection, settings, saveSettings, icons.Get, ports);
         Info = new InfoViewModel(connection, ports);
-        Rules = new RulesViewModel(connection);
+        Rules = new RulesViewModel(connection, settings, saveSettings);
+        AppSettings = new SettingsViewModel(settings, saveSettings, new StartupTask(Environment.ProcessPath ?? "NetWarden.exe"));
+        Rules.Reloaded += () => AppSettings.SetRules(Rules.Snapshot?.Rules ?? []);
         Blocker = new BlockerViewModel(connection, Rules);
         Priorities = new PrioritiesViewModel(() => SettingsFromService, UpdateSettingsAsync);
         Stats = new StatsViewModel(connection, settings, saveSettings, ports, () => SettingsFromService, UpdateSettingsAsync);
         Quotas = new QuotasViewModel(connection);
-        Apps = new AppsViewModel(connection);
+        Apps = new AppsViewModel(connection, settings, saveSettings);
         Networks = new NetworksViewModel(connection);
         Networks.Reloaded += Stats.SetNetworks;
         Log = new ConnectionLogViewModel(connection);
-        History = new ConnectionHistoryViewModel(connection, () => DateTimeOffset.Now);
+        History = new ConnectionHistoryViewModel(connection, () => DateTimeOffset.Now, settings, saveSettings);
         Activity.Updated += () =>
         {
             OnPropertyChanged(nameof(ChartHistory));
+            OnPropertyChanged(nameof(ComputerHistory));
+            OnPropertyChanged(nameof(RailDownload));
+            OnPropertyChanged(nameof(RailUpload));
             Info.Refresh();
             RefreshRuleStates();
             // Packet counters change constantly; refresh them every few snapshots
@@ -88,6 +93,13 @@ public sealed partial class MainViewModel : ObservableObject
     public PrioritiesViewModel Priorities { get; }
     public StatsViewModel Stats { get; }
     public QuotasViewModel Quotas { get; }
+    public SettingsViewModel AppSettings { get; }
+
+    /// <summary>The whole computer's traffic, for the meter in the rail.</summary>
+    public RateHistory? ComputerHistory => Activity.History.Get(ActivityViewModel.ComputerKey);
+    public string RailDownload => ByteFormatter.Rate(Activity.RateIn, Activity.Units);
+    public string RailUpload => ByteFormatter.Rate(Activity.RateOut, Activity.Units);
+
     public AppsViewModel Apps { get; }
     public NetworksViewModel Networks { get; }
     public ConnectionLogViewModel Log { get; }
@@ -279,10 +291,33 @@ public sealed partial class MainViewModel : ObservableObject
             row.LimitInText = QuickLimit.Format(QuickLimit.Kilobytes(limitIn));
             row.LimitOutText = QuickLimit.Format(QuickLimit.Kilobytes(limitOut));
             row.Priority = QuickPriority.Level(QuickPriority.Find(snapshot, filter));
+            row.RuleStatus = RuleStatus.Describe(row.IsBlockedIn, row.IsBlockedOut, row.IsLimitedIn, row.LimitInText, row.IsLimitedOut, row.LimitOutText, row.Priority);
         }
         ShowPriorityStatus();
         foreach (string name in new[] { nameof(BlockInternetIn), nameof(BlockInternetOut), nameof(BlockLocalIn), nameof(BlockLocalOut) })
             OnPropertyChanged(name);
+    }
+
+    /// <summary>Runs what a hotkey or tray item stands for. The window handles showing itself.</summary>
+    public async Task RunTargetAsync(string target)
+    {
+        switch (target)
+        {
+            case HotkeyTargets.Limiter:
+                await UpdateSettingsAsync(s => s.IsLimiterEnabled = !s.IsLimiterEnabled);
+                break;
+            case HotkeyTargets.Blocker:
+                await UpdateSettingsAsync(s => s.IsBlockerEnabled = !s.IsBlockerEnabled);
+                break;
+            case HotkeyTargets.Priorities:
+                await UpdateSettingsAsync(s => s.IsPriorityEnabled = !s.IsPriorityEnabled);
+                break;
+            default:
+                if (target.StartsWith(HotkeyTargets.RulePrefix, StringComparison.Ordinal)
+                    && Guid.TryParse(target[HotkeyTargets.RulePrefix.Length..], out Guid rule))
+                    await Rules.ToggleByIdAsync(rule);
+                break;
+        }
     }
 
     /// <summary>Copies the service settings, applies a change and saves it; the change event refreshes the UI.</summary>
@@ -318,11 +353,28 @@ public sealed partial class MainViewModel : ObservableObject
         ? $"Service v{i.Version} · PID {i.ProcessId} · {(i.IsWindowsService ? "Windows service" : "console mode")}"
         : "";
 
-    // Column visibility; ids are stable so settings survive column reordering.
-    public bool ShowRateIn { get => IsColumnVisible("RateIn"); set => SetColumn("RateIn", value); }
-    public bool ShowRateOut { get => IsColumnVisible("RateOut"); set => SetColumn("RateOut", value); }
-    public bool ShowTotalIn { get => IsColumnVisible("TotalIn"); set => SetColumn("TotalIn", value); }
-    public bool ShowTotalOut { get => IsColumnVisible("TotalOut"); set => SetColumn("TotalOut", value); }
+    /// <summary>For the window, which remembers its own arrangement.</summary>
+    public ClientSettings Settings => _settings;
+
+    public void SaveSettings() => _saveSettings();
+
+    public string Page
+    {
+        get => _settings.Page;
+        set
+        {
+            if (_settings.Page == value)
+                return;
+            _settings.Page = value;
+            _saveSettings();
+        }
+    }
+
+    public double InfoPaneWidth
+    {
+        get => _settings.InfoPaneWidth;
+        set { _settings.InfoPaneWidth = value; _saveSettings(); }
+    }
 
     public bool ShowInfoPane
     {
@@ -347,6 +399,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     public event Action<AppTheme>? ThemeChanged;
 
+    public IReadOnlyList<AppTheme> AppThemes { get; } = Enum.GetValues<AppTheme>();
+
     public bool ShowChart
     {
         get => _settings.ShowChart;
@@ -370,13 +424,12 @@ public sealed partial class MainViewModel : ObservableObject
 
     private string ChartKey => SelectedAppRow?.Key ?? ActivityViewModel.ComputerKey;
 
-    private bool IsColumnVisible(string id) => !_settings.Columns.TryGetValue(id, out bool visible) || visible;
-
-    private void SetColumn(string id, bool visible)
+    /// <summary>Tells bindings that a layout profile changed these.</summary>
+    public void RefreshLayoutChoices()
     {
-        _settings.Columns[id] = visible;
-        _saveSettings();
-        OnPropertyChanged("Show" + id);
+        OnPropertyChanged(nameof(ShowInfoPane));
+        OnPropertyChanged(nameof(ShowChart));
+        OnPropertyChanged(nameof(ChartWindowSeconds));
     }
 
     partial void OnConnectionStateChanged(ConnectionState value) => OnPropertyChanged(nameof(IsConnected));
@@ -387,7 +440,11 @@ public sealed partial class MainViewModel : ObservableObject
         _ = Info.ShowAsync(value);
         OnPropertyChanged(nameof(ChartHistory));
         OnPropertyChanged(nameof(ChartTitle));
+        OnPropertyChanged(nameof(HasSelection));
     }
+
+    /// <summary>The inspector opens only for something selected.</summary>
+    public bool HasSelection => SelectedRow is not null;
 
     private void OnServiceEvent(string method, JsonElement? payload)
     {

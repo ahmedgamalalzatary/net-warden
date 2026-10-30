@@ -48,8 +48,8 @@ public sealed class ThemeTests(WpfHarness wpf)
             }
         });
 
-        Assert.Equal(Color.FromRgb(0x26, 0x26, 0x28), dark);
-        Assert.Equal(Colors.White, light);
+        Assert.Equal(Color.FromRgb(0x16, 0x26, 0x2A), dark);
+        Assert.Equal(Color.FromRgb(0xFB, 0xFC, 0xFB), light);
         Assert.Equal(1, count);
     }
 

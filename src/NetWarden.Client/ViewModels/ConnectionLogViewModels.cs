@@ -146,7 +146,7 @@ public sealed record HistoryRow(ConnectionHistoryRow Row)
 }
 
 /// <summary>The History tab: who each app talked to, from the statistics.</summary>
-public sealed partial class ConnectionHistoryViewModel(IServiceRequester service, Func<DateTimeOffset> now) : ObservableObject
+public sealed partial class ConnectionHistoryViewModel(IServiceRequester service, Func<DateTimeOffset> now, ClientSettings? settings = null, Action? saveSettings = null) : ObservableObject
 {
     private List<HistoryRow> _all = [];
     private AppInfo? _app;
@@ -155,7 +155,7 @@ public sealed partial class ConnectionHistoryViewModel(IServiceRequester service
     public ObservableCollection<HistoryRow> Rows { get; } = [];
 
     [ObservableProperty]
-    private HistoryRange _range = HistoryRange.Week;
+    private HistoryRange _range = settings?.HistoryRange ?? HistoryRange.Week;
 
     [ObservableProperty]
     private string _search = "";
@@ -166,7 +166,13 @@ public sealed partial class ConnectionHistoryViewModel(IServiceRequester service
     public bool HasApp => _app is not null;
     public string AppText => _app is null ? "" : $"App: {_app.DisplayName}";
 
-    partial void OnRangeChanged(HistoryRange value) => _ = RefreshAsync();
+    partial void OnRangeChanged(HistoryRange value)
+    {
+        if (settings is not null)
+            settings.HistoryRange = value;
+        saveSettings?.Invoke();
+        _ = RefreshAsync();
+    }
 
     partial void OnSearchChanged(string value) => Rebuild();
 

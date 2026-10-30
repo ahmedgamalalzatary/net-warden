@@ -116,6 +116,95 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
     private void SelectTab(string header) =>
         _window.Tabs.SelectedItem = _window.Tabs.Items.OfType<TabItem>().Single(t => (string)t.Header == header);
 
+    private async Task SelectBrowserAsync()
+    {
+        await WpfHarness.Settle();
+        _vm.SelectedRow = _vm.Activity.Rows.Single(r => r.Name == "Browser");
+        await WpfHarness.Settle();
+    }
+
+    [Fact]
+    public async Task Rows_of_every_grid_use_the_dark_panel_colors_in_dark_mode()
+    {
+        await wpf.RunAsync(async () =>
+        {
+            wpf.Themes.Apply(AppTheme.Dark);
+            try
+            {
+                for (int i = 0; i < 50 && _vm.Rules.VisibleRules.Count == 0; i++)
+                    await WpfHarness.Settle(30);
+                SelectTab("Rules");
+                await WpfHarness.Settle();
+
+                var panel = ((System.Windows.Media.SolidColorBrush)System.Windows.Application.Current.FindResource("PanelBackground")).Color;
+                var alt = ((System.Windows.Media.SolidColorBrush)System.Windows.Application.Current.FindResource("AltRowBackground")).Color;
+                foreach (var row in WpfHarness.Descendants<DataGridRow>(_window.RulesGrid))
+                    Assert.Contains(((System.Windows.Media.SolidColorBrush)row.Background).Color, new[] { panel, alt });
+            }
+            finally
+            {
+                wpf.Themes.Apply(AppTheme.Light);
+                SelectTab("Activity");
+            }
+        });
+    }
+
+    [Fact]
+    public async Task Inspector_opens_only_for_a_selection()
+    {
+        await wpf.RunAsync(async () =>
+        {
+            await WpfHarness.Settle();
+            Assert.Equal(System.Windows.Visibility.Collapsed, _window.InspectorPane.Visibility);
+
+            await SelectBrowserAsync();
+            Assert.Equal(System.Windows.Visibility.Visible, _window.InspectorPane.Visibility);
+
+            _vm.SelectedRow = null;
+            await WpfHarness.Settle();
+            Assert.Equal(System.Windows.Visibility.Collapsed, _window.InspectorPane.Visibility);
+        });
+    }
+
+    [Fact]
+    public async Task The_rail_moves_between_pages_and_the_page_is_remembered()
+    {
+        await wpf.RunAsync(async () =>
+        {
+            await WpfHarness.Settle();
+            var nav = _window.Nav.Children.OfType<RadioButton>().Single(b => (string)b.Tag == "Rules");
+            typeof(ButtonBase).GetMethod("OnClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .Invoke(nav, null);
+            await WpfHarness.Settle();
+
+            Assert.Equal("Rules", ((TabItem)_window.Tabs.SelectedItem).Header);
+            Assert.Equal("Rules", _vm.Settings.Page);
+            Assert.True(nav.IsChecked);
+
+            var second = new MainWindow { DataContext = _vm };
+            second.Show();
+            await WpfHarness.Settle();
+            string shown = (string)((TabItem)second.Tabs.SelectedItem).Header;
+            second.Close();
+            _window.ShowPage("Activity");
+            Assert.Equal("Rules", shown);
+        });
+    }
+
+    [Fact]
+    public async Task Every_page_opens_without_binding_failures_crashing_it()
+    {
+        await wpf.RunAsync(async () =>
+        {
+            foreach (string page in _window.PageNames)
+            {
+                _window.ShowPage(page);
+                await WpfHarness.Settle();
+            }
+            _window.ShowPage("Activity");
+        });
+    }
+
     private List<string> VisibleNames() =>
         WpfHarness.Descendants<DataGridRow>(Grid).OrderBy(r => r.GetIndex()).Select(r => ((ActivityRow)r.Item).Name).ToList();
 
@@ -199,9 +288,8 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
     {
         await wpf.RunAsync(async () =>
         {
-            await WpfHarness.Settle();
-            var row = WpfHarness.Descendants<DataGridRow>(Grid).Single(r => ((ActivityRow)r.Item).Name == "Browser");
-            var box = WpfHarness.Descendants<CheckBox>(row).Single(c => (string)c.Tag == "Out" && c.ToolTip is string t && t.StartsWith("Block"));
+            await SelectBrowserAsync();
+            var box = WpfHarness.Descendants<CheckBox>(_window.Inspector).Single(c => (string)c.Tag == "Out" && c.ToolTip is string t && t.StartsWith("Block"));
             // OnClick is what a mouse click runs (it toggles and raises Click).
             typeof(ButtonBase).GetMethod("OnClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                 .Invoke(box, null);
@@ -219,9 +307,8 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
     {
         await wpf.RunAsync(async () =>
         {
-            await WpfHarness.Settle();
-            var row = WpfHarness.Descendants<DataGridRow>(Grid).Single(r => ((ActivityRow)r.Item).Name == "Browser");
-            var box = WpfHarness.Descendants<TextBox>(row).Single(t => (string)t.Tag == "In");
+            await SelectBrowserAsync();
+            var box = WpfHarness.Descendants<TextBox>(_window.Inspector).Single(t => (string)t.Tag == "In");
             Assert.Equal("100", box.Text);
             box.Focus();
             box.Text = "250";
@@ -238,13 +325,12 @@ public sealed class MainWindowTests(WpfHarness wpf) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Choosing_a_priority_in_the_grid_saves_a_priority_rule()
+    public async Task Choosing_a_priority_in_the_inspector_saves_a_priority_rule()
     {
         await wpf.RunAsync(async () =>
         {
-            await WpfHarness.Settle();
-            var row = WpfHarness.Descendants<DataGridRow>(Grid).Single(r => ((ActivityRow)r.Item).Name == "Browser");
-            var combo = WpfHarness.Descendants<ComboBox>(row).Single();
+            await SelectBrowserAsync();
+            var combo = WpfHarness.Descendants<ComboBox>(_window.Inspector).Single();
             Assert.Equal(PriorityLevel.Normal, combo.SelectedItem);
             combo.SelectedItem = PriorityLevel.High;
             for (int i = 0; i < 50 && _savedRules.Count == 0; i++)

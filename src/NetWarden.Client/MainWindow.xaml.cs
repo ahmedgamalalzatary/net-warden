@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using NetWarden.Client.Dialogs;
+using NetWarden.Client.Services;
 using NetWarden.Client.ViewModels;
 using NetWarden.Shared.Contracts;
 
@@ -19,6 +20,9 @@ public partial class MainWindow : Window
             if (ViewModel is not { } vm)
                 return;
             vm.Activity.Updated += Chart.Refresh;
+            vm.Activity.Updated += RailChart.Refresh;
+            HotkeyTargetNameConverter.Settings = vm.AppSettings;
+            AttachMemory(vm);
             vm.Blocker.RequestArrived += _ => ShowBlockerPrompt();
             vm.QuotaExceeded += ShowQuotaAlert;
             vm.PropertyChanged += OnViewModelPropertyChanged;
@@ -34,6 +38,11 @@ public partial class MainWindow : Window
                 vm.IsQuotasTabVisible = Tabs.SelectedItem == QuotasTab;
                 vm.IsLogTabVisible = Tabs.SelectedItem == LogTab;
                 vm.IsHistoryTabVisible = Tabs.SelectedItem == HistoryTab;
+                if (Tabs.SelectedItem is TabItem { Header: string page })
+                {
+                    SyncNav(page);
+                    vm.Page = page;
+                }
                 if (Tabs.SelectedItem == AppsTab && vm.IsConnected)
                     _ = vm.Apps.RefreshAsync();
                 if (Tabs.SelectedItem == NetworksTab && vm.IsConnected)
@@ -46,16 +55,214 @@ public partial class MainWindow : Window
 
     private MainViewModel? ViewModel => DataContext as MainViewModel;
 
+    /// <summary>The name of every page, in order.</summary>
+    public IReadOnlyList<string> PageNames => Tabs.Items.OfType<TabItem>().Select(t => (string)t.Header).ToList();
+
+    public void ShowPage(string name) => Tabs.SelectedItem = Tabs.Items.OfType<TabItem>().Single(t => (string)t.Header == name);
+
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainViewModel.ShowInfoPane))
+        if (e.PropertyName is nameof(MainViewModel.ShowInfoPane) or nameof(MainViewModel.HasSelection))
             UpdateInfoPaneWidth();
     }
 
+    /// <summary>The inspector takes room only when there is something to inspect.</summary>
     private void UpdateInfoPaneWidth()
     {
-        var grid = (Grid)ActivityGrid.Parent;
-        grid.ColumnDefinitions[2].Width = ViewModel?.ShowInfoPane == false ? new GridLength(0) : new GridLength(320);
+        bool show = ViewModel is { ShowInfoPane: true, HasSelection: true };
+        var column = ActivityArea.ColumnDefinitions[2];
+        column.MinWidth = show ? 240 : 0;
+        column.Width = show ? new GridLength(ViewModel!.InfoPaneWidth) : new GridLength(0);
+        InspectorPane.Visibility = InspectorSplitter.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void InspectorSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        if (ViewModel is { } vm)
+            vm.InfoPaneWidth = ActivityArea.ColumnDefinitions[2].ActualWidth;
+    }
+
+    // ----- Navigation and what is remembered -----
+
+    private LayoutMemory? _layout;
+    private HotkeyManager? _hotkeys;
+    private ITrayIcon? _tray;
+    private bool _exiting;
+
+    private void Nav_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { Tag: string page })
+            ShowPage(page);
+    }
+
+    private void SyncNav(string page)
+    {
+        foreach (var item in Nav.Children.OfType<RadioButton>().Append(NavSettings))
+            item.IsChecked = (string)item.Tag == page;
+    }
+
+    private IEnumerable<(DataGrid Grid, string Key, bool RememberSort)> Grids =>
+    [
+        (ActivityGrid, "Activity", false), (StatsGrid, "Statistics", true), (LogGrid, "Log", false), (HistoryGrid, "History", true),
+        (RulesGrid, "Rules", true), (PendingGrid, "Pending", true), (QuotasGrid, "Quotas", true), (FiltersGrid, "Filters", true),
+        (AppsGrid, "Apps", true), (NetworksGrid, "Networks", true),
+    ];
+
+    private void AttachMemory(MainViewModel vm)
+    {
+        _layout = new LayoutMemory(vm.Settings, vm.SaveSettings);
+        foreach (var (grid, key, rememberSort) in Grids)
+            _layout.Attach(grid, key, rememberSort);
+        ShowActivitySort(vm);
+        vm.AppSettings.ProfileApplied += () =>
+        {
+            foreach (var (grid, key, rememberSort) in Grids)
+                _layout.Restore(grid, key, rememberSort);
+            vm.RefreshLayoutChoices();
+            UpdateInfoPaneWidth();
+        };
+        vm.AppSettings.AppearanceChanged += () => Chart.Refresh();
+
+        var s = vm.Settings;
+        if (!double.IsNaN(s.WindowLeft))
+        {
+            var fitted = WindowMemory.Fit(new Rect(s.WindowLeft, s.WindowTop, s.WindowWidth, s.WindowHeight), SystemParameters.WorkArea);
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            (Left, Top, Width, Height) = (fitted.Left, fitted.Top, fitted.Width, fitted.Height);
+        }
+        if (s.WindowMaximized)
+            WindowState = WindowState.Maximized;
+        Closing += (_, e) =>
+        {
+            RememberWindow(s, vm);
+            if (TrayPolicy.HideOnClose(s.CloseToTray, _exiting))
+            {
+                e.Cancel = true;
+                Hide();
+            }
+        };
+        StateChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Minimized && s.MinimizeToTray)
+                Hide();
+        };
+        Dispatcher.BeginInvoke(() =>
+        {
+            ShowPage(PageNames.Contains(s.Page) ? s.Page : "Activity");
+            SyncNav(s.Page);
+        });
+    }
+
+    private void RememberWindow(ClientSettings s, MainViewModel vm)
+    {
+        s.WindowMaximized = WindowState == WindowState.Maximized;
+        var bounds = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
+        if (!bounds.IsEmpty)
+            (s.WindowLeft, s.WindowTop, s.WindowWidth, s.WindowHeight) = (bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+        vm.SaveSettings();
+    }
+
+    private void ShowActivitySort(MainViewModel vm)
+    {
+        foreach (var c in ActivityGrid.Columns)
+            c.SortDirection = c.SortMemberPath == vm.Activity.SortColumn.ToString()
+                ? (vm.Activity.SortDescending ? ListSortDirection.Descending : ListSortDirection.Ascending)
+                : null;
+    }
+
+    /// <summary>Sets up what needs a real, running desktop: the tray icon and system-wide hotkeys.</summary>
+    /// <param name="createTray">Makes the tray icon; the real one unless a test supplies its own.</param>
+    public void StartDesktopFeatures(Func<TrayActions, ITrayIcon>? createTray = null)
+    {
+        if (ViewModel is not { } vm)
+            return;
+        _tray = (createTray ?? (actions => new TrayIcon(actions)))(new TrayActions(
+            ToggleWindow,
+            ShowFromTray,
+            () =>
+            {
+                ShowFromTray();
+                ShowPage("Blocker");
+            },
+            ExitForReal,
+            on => _ = vm.UpdateSettingsAsync(s => s.IsLimiterEnabled = on),
+            on => _ = vm.UpdateSettingsAsync(s => s.IsBlockerEnabled = on),
+            on => _ = vm.UpdateSettingsAsync(s => s.IsPriorityEnabled = on),
+            () => new TrayState(vm.IsLimiterEnabled, vm.IsBlockerEnabled, vm.IsPriorityEnabled, vm.Blocker.Pending.Count)));
+        Closed += (_, _) =>
+        {
+            _tray.Dispose();
+            _hotkeys?.Dispose();
+        };
+
+        _hotkeys = new HotkeyManager(new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle(), target =>
+        {
+            if (target == HotkeyTargets.ShowWindow)
+                ToggleWindow();
+            else
+                _ = vm.RunTargetAsync(target);
+        });
+        void Register() => vm.AppSettings.ShowRefusedHotkeys(_hotkeys.Register(vm.AppSettings.Hotkeys));
+        vm.AppSettings.HotkeysChanged += Register;
+        Register();
+
+        vm.Blocker.RequestArrived += _ =>
+        {
+            if (!IsVisible && vm.AppSettings.Notifications)
+                _tray.Notify("NetWarden", vm.Blocker.Pending.Count + " " + Loc.Current["waiting connection requests"]);
+        };
+    }
+
+    private void ToggleWindow()
+    {
+        if (IsVisible && WindowState != WindowState.Minimized)
+            Hide();
+        else
+            ShowFromTray();
+    }
+
+    private void ShowFromTray()
+    {
+        Show();
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    /// <summary>Closes for good, whatever the tray settings say.</summary>
+    internal void ExitForTest() => ExitForReal();
+
+    private void ExitForReal()
+    {
+        _exiting = true;
+        Close();
+    }
+
+    private void RemoveHotkey_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is HotkeyBinding binding)
+            ViewModel?.AppSettings.RemoveHotkeyCommand.Execute(binding);
+    }
+
+    /// <summary>Pressing a combination in the box writes it out.</summary>
+    private void HotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        Key key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key is Key.Tab or Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin || ViewModel is not { } vm)
+            return;
+        e.Handled = true;
+        string name = key is >= Key.D0 and <= Key.D9 ? ((char)('0' + (key - Key.D0))).ToString() : key.ToString();
+        var parts = new List<string>();
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            parts.Add("Ctrl");
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))
+            parts.Add("Alt");
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            parts.Add("Shift");
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Windows))
+            parts.Add("Win");
+        parts.Add(name);
+        vm.AppSettings.NewHotkeyText = string.Join("+", parts);
     }
 
     private void ActivityGrid_Sorting(object sender, DataGridSortingEventArgs e)
@@ -121,6 +328,11 @@ public partial class MainWindow : Window
         if (RowOf(sender) is not { } row || ViewModel is not { } vm)
             return;
         int count = vm.Activity.KillableConnections(row).Count;
+        if (count == 0)
+        {
+            ShowError("This app has no connection that can be killed. Windows only allows it for IPv4 TCP.");
+            return;
+        }
         string what = count == 1 ? "1 connection" : $"{count} connections";
         if (MessageBox.Show(this, $"Kill {what} of {(row.IsApp ? row.Name : row.Parent?.Name)}?", "Kill connections",
                 MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
@@ -330,6 +542,8 @@ public partial class MainWindow : Window
     {
         if (ViewModel is not { } vm)
             return;
+        if (!IsVisible && vm.AppSettings.Notifications)
+            _tray?.Notify("NetWarden", $"{alert.FilterName} has used its quota");
         new QuotaAlertWindow(alert, () => vm.Service.RequestAsync<bool>(Shared.Ipc.Methods.QuotasReset, new QuotaRequest(alert.RuleId))).Show();
     }
 

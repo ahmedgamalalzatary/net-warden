@@ -249,11 +249,27 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 - UDP is keyed by (process, local port): sockets bind 0.0.0.0 while events carry the real address.
 - The ETW session is named `NetWarden-Traffic`; tests use unique names so they never steal the service's session.
 
+## Shell notes
+- `MainWindow` has a fixed rail (`Nav`, master switches, live meter) and a `TabControl` used only as a pager (`Pager` style).
+  A page is a `TabItem` plus a rail `RadioButton` with the same name in `Tag`; `ShowPage(name)` moves between them.
+- Activity rows only read. Everything that changes an app lives in `Inspector`, whose DataContext is the selected row.
+- `LayoutMemory.Attach(grid, key)` remembers sort, widths, order and hidden columns in client.json; right-clicking a header
+  picks columns. A new grid must be added to `MainWindow.Grids`. Page, window bounds and filters are `ClientSettings` too.
+- Look: the rail stays dark in both themes; `DisplayFont` (Bahnschrift) is for titles and figures only; yellow (`SignalBrush`)
+  marks where you are and what is on. `PrimaryButton` is for the one main action of a page.
+- Text: `{svc:T English text}`, translated from `Assets/Lang/<code>.json` by the English key; missing keys show English.
+  Figures in a right-to-left window need `FlowDirection="LeftToRight"`.
+- Tray: `ITrayIcon`; tests pass a fake to `StartDesktopFeatures`, because a real icon of a dead test process stays visible.
+  Only `Real_tray_icon_is_gone_from_windows_after_dispose` makes one, and it asks Windows that it went away.
+- Start at logon is a scheduled task with the highest run level (`StartupTask`), since the client needs elevation; `--tray` starts hidden.
+- See every page: `NETWARDEN_TOUR=<folder> dotnet test --filter UiTour` screenshots the real window against an in-process
+  service on a private pipe and data folder, in both themes.
+
 ## Client notes
 - Client preferences: `%LocalAppData%\NetWarden\client.json`; unhandled UI errors: `client.log` next to it.
-- DL/UL Limit cells: a "quick limit" is one permanent Limit rule on the app's filter per direction.
+- DL/UL limit in the inspector: a "quick limit" is one permanent Limit rule on the app's filter per direction.
   The checkbox enables/disables it (keeping the value); typing a value + Enter sets it and turns it on.
-- Themes: View > Theme (Follow Windows / Light / Dark), saved in client.json. `ThemeManager` sets WPF's
+- Themes: Settings > Theme (System / Light / Dark), saved in client.json. `ThemeManager` sets WPF's
   Fluent `Application.ThemeMode` (styles standard controls and the title bar) and swaps
   `Themes/Light.xaml` / `Themes/Dark.xaml` (our brushes; same keys in both). Views must use
   `{DynamicResource Key}` for these brushes, never StaticResource or hard-coded colors.
@@ -264,7 +280,7 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
   theme brushes (Foreground, BorderBrush) or text turns black on dark.
 - DataGrid squeezes fixed columns to fit a star column; give them `MinWidth` so it scrolls instead.
 - Visual check: `NETWARDEN_SHOTS=<folder> dotnet test --filter ThemeTests` writes each dialog in both themes as PNG.
-- Priority cell: a "quick priority" is one permanent Both-direction Priority rule on the app's filter;
+- Priority in the inspector: a "quick priority" is one permanent Both-direction Priority rule on the app's filter;
   choosing Normal deletes it.
 - Two-way bindings inside DataGrid cells need an explicit `UpdateSourceTrigger=PropertyChanged`,
   otherwise the row BindingGroup defers them forever (read-only grids never commit).

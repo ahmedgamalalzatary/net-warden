@@ -36,7 +36,7 @@ public sealed record AppRow(KnownAppView View)
 }
 
 /// <summary>The Apps tab: every app seen, its tags, and forgetting apps.</summary>
-public sealed partial class AppsViewModel(IServiceRequester service) : ObservableObject
+public sealed partial class AppsViewModel(IServiceRequester service, ClientSettings? settings = null, Action? saveSettings = null) : ObservableObject
 {
     private List<AppRow> _all = [];
 
@@ -53,7 +53,7 @@ public sealed partial class AppsViewModel(IServiceRequester service) : Observabl
     private string _search = "";
 
     [ObservableProperty]
-    private AppAvailability _availability;
+    private AppAvailability _availability = settings?.AppAvailability ?? AppAvailability.All;
 
     /// <summary>Tags of the selected app, separated by commas.</summary>
     [ObservableProperty]
@@ -66,7 +66,15 @@ public sealed partial class AppsViewModel(IServiceRequester service) : Observabl
     private string? _lastError;
 
     partial void OnSearchChanged(string value) => Rebuild();
-    partial void OnAvailabilityChanged(AppAvailability value) => Rebuild();
+
+    partial void OnAvailabilityChanged(AppAvailability value)
+    {
+        if (settings is not null)
+            settings.AppAvailability = value;
+        saveSettings?.Invoke();
+        Rebuild();
+    }
+
     partial void OnSelectedChanged(AppRow? value) => TagsText = value?.Tags ?? "";
 
     public async Task RefreshAsync()

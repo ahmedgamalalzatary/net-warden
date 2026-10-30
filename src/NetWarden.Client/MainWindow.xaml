@@ -10,13 +10,15 @@
         xmlns:ipc="clr-namespace:NetWarden.Shared.Ipc;assembly=NetWarden.Shared"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
-        Title="NetWarden" Icon="pack://application:,,,/NetWarden.Client;component/Assets/NetWarden.ico" Width="1360" Height="800" MinWidth="720" MinHeight="460"
+        Title="NetWarden" Icon="pack://application:,,,/NetWarden.Client;component/Assets/NetWarden.ico" Width="1360" Height="820" MinWidth="900" MinHeight="560"
         Background="{DynamicResource WindowBackground}"
         FontFamily="Segoe UI" FontSize="13">
     <Window.Resources>
         <local:BindingProxy x:Key="Proxy" Data="{Binding}" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <local:FlagImageConverter x:Key="FlagImage" />
+        <svc:TranslateConverter x:Key="Translate" />
+        <vm:HotkeyTargetNameConverter x:Key="HotkeyTargetName" />
 
         <Style x:Key="NumberCell" TargetType="TextBlock">
             <Setter Property="HorizontalAlignment" Value="Right" />
@@ -43,7 +45,7 @@
         </Style>
 
         <ContextMenu x:Key="RowMenu" Opened="RowMenu_Opened">
-            <MenuItem Tag="rule" Header="Add rule..." Click="AddRuleForRow_Click" FontWeight="SemiBold" />
+            <MenuItem Tag="rule" Header="{svc:T Add rule...}" Click="AddRuleForRow_Click" FontWeight="SemiBold" />
             <MenuItem Tag="expand" Header="Expand / collapse" Click="Expand_Click" />
             <MenuItem Tag="history" Header="Connection history" Click="ShowHistory_Click" />
             <Separator />
@@ -55,96 +57,99 @@
         </ContextMenu>
     </Window.Resources>
 
-    <DockPanel>
-        <!-- Header: product name and global feature switches (wired up in later phases) -->
-        <Border DockPanel.Dock="Top" Background="{DynamicResource PanelBackground}"
-                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
-            <DockPanel>
-                <TextBlock Text="NetWarden" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" IsEnabled="{Binding IsConnected}">
-                    <Border Style="{StaticResource FeatureChip}">
-                        <CheckBox Content="Limiter" IsChecked="{Binding IsLimiterEnabled}" ToolTip="Turn limiter on or off for the whole computer" />
-                    </Border>
-                    <Border Style="{StaticResource FeatureChip}">
-                        <CheckBox Content="Blocker" IsChecked="{Binding IsBlockerEnabled}" ToolTip="Turn blocker on or off for the whole computer" />
-                    </Border>
-                    <Border Style="{StaticResource FeatureChip}">
-                        <CheckBox Content="Priorities" IsChecked="{Binding IsPriorityEnabled}" ToolTip="Turn priorities on or off for the whole computer" />
-                    </Border>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="212" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Rail: where you are, what the line is doing, and the master switches -->
+        <DockPanel Background="{DynamicResource RailBackground}">
+            <StackPanel DockPanel.Dock="Top">
+                <TextBlock Text="NetWarden" FontFamily="{StaticResource DisplayFont}" FontSize="20" Foreground="{DynamicResource RailText}" Margin="22,18,12,10" />
+                <Grid Margin="22,0,16,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition /><RowDefinition />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="↓" Foreground="{DynamicResource RailIn}" FontSize="18" Margin="0,0,8,0" ToolTip="{svc:T Download}" />
+                    <TextBlock x:Name="RailDownloadText" Grid.Column="1" Text="{Binding RailDownload}" FlowDirection="LeftToRight" HorizontalAlignment="Left" FontFamily="{StaticResource DisplayFont}" FontSize="18" Foreground="{DynamicResource RailText}" />
+                    <TextBlock Grid.Row="1" Text="↑" Foreground="{DynamicResource RailOut}" FontSize="18" ToolTip="{svc:T Upload}" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding RailUpload}" FlowDirection="LeftToRight" HorizontalAlignment="Left" FontFamily="{StaticResource DisplayFont}" FontSize="18" Foreground="{DynamicResource RailText}" />
+                </Grid>
+                <charts:TrafficChart x:Name="RailChart" Height="44" Margin="22,8,16,4" IsCompact="True" History="{Binding ComputerHistory}" WindowSeconds="120"
+                                     InBrush="{DynamicResource RailIn}" OutBrush="{DynamicResource RailOut}" />
+            </StackPanel>
+
+            <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,12">
+                <StackPanel IsEnabled="{Binding IsConnected}">
+                    <CheckBox Style="{StaticResource RailSwitch}" Content="{svc:T Limiter}" IsChecked="{Binding IsLimiterEnabled}" ToolTip="{Binding Blocker.LimiterStatusText}" />
+                    <CheckBox Style="{StaticResource RailSwitch}" Content="{svc:T Blocker}" IsChecked="{Binding IsBlockerEnabled}" ToolTip="{Binding Blocker.StatusText}" />
+                    <CheckBox Style="{StaticResource RailSwitch}" Content="{svc:T Priorities}" IsChecked="{Binding IsPriorityEnabled}" ToolTip="{Binding Priorities.StateText}" />
                 </StackPanel>
-            </DockPanel>
-        </Border>
+                <RadioButton x:Name="NavSettings" Tag="Settings" Style="{StaticResource NavItem}" Content="{svc:T Settings}" Margin="0,8,0,0" Click="Nav_Click" />
+                <StackPanel Orientation="Horizontal" Margin="22,10,12,0" ToolTip="{Binding ServiceSummary}">
+                    <Ellipse Width="8" Height="8" Margin="0,0,8,0" VerticalAlignment="Center">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="{DynamicResource BadBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ConnectionState}" Value="{x:Static ipc:ConnectionState.Connected}">
+                                        <Setter Property="Fill" Value="{DynamicResource OkBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding ConnectionState}" Value="{x:Static ipc:ConnectionState.Connecting}">
+                                        <Setter Property="Fill" Value="{DynamicResource WarnBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource RailMuted}" FontSize="12" MaxWidth="160" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </StackPanel>
 
-        <!-- Status bar -->
-        <Border DockPanel.Dock="Bottom" Background="{DynamicResource PanelBackground}"
-                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,6">
-            <DockPanel>
-                <Ellipse Width="9" Height="9" Margin="0,0,8,0" VerticalAlignment="Center">
-                    <Ellipse.Style>
-                        <Style TargetType="Ellipse">
-                            <Setter Property="Fill" Value="{DynamicResource BadBrush}" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding ConnectionState}" Value="{x:Static ipc:ConnectionState.Connected}">
-                                    <Setter Property="Fill" Value="{DynamicResource OkBrush}" />
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding ConnectionState}" Value="{x:Static ipc:ConnectionState.Connecting}">
-                                    <Setter Property="Fill" Value="{DynamicResource WarnBrush}" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Ellipse.Style>
-                </Ellipse>
-                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding Activity.LastError}" Foreground="{DynamicResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding Blocker.LimiterStatusText}" Foreground="{DynamicResource MutedText}" Margin="16,0,0,0" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding ServiceSummary}" Foreground="{DynamicResource MutedText}"
-                           HorizontalAlignment="Right" VerticalAlignment="Center" />
-            </DockPanel>
-        </Border>
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="Nav">
+                    <TextBlock Text="{svc:T Monitor}" Style="{StaticResource NavGroup}" />
+                    <RadioButton Tag="Activity" Style="{StaticResource NavItem}" Content="{svc:T Activity}" Click="Nav_Click" />
+                    <RadioButton Tag="Statistics" Style="{StaticResource NavItem}" Content="{svc:T Statistics}" Click="Nav_Click" />
+                    <RadioButton Tag="Log" Style="{StaticResource NavItem}" Content="{svc:T Log}" Click="Nav_Click" />
+                    <RadioButton Tag="History" Style="{StaticResource NavItem}" Content="{svc:T History}" Click="Nav_Click" />
+                    <TextBlock Text="{svc:T Control}" Style="{StaticResource NavGroup}" />
+                    <RadioButton Tag="Rules" Style="{StaticResource NavItem}" Content="{svc:T Rules}" Click="Nav_Click" />
+                    <RadioButton Tag="Blocker" Style="{StaticResource NavItem}" Content="{svc:T Blocker}" Click="Nav_Click" />
+                    <RadioButton Tag="Priorities" Style="{StaticResource NavItem}" Content="{svc:T Priorities}" Click="Nav_Click" />
+                    <RadioButton Tag="Quotas" Style="{StaticResource NavItem}" Content="{svc:T Quotas}" Click="Nav_Click" />
+                    <TextBlock Text="{svc:T Library}" Style="{StaticResource NavGroup}" />
+                    <RadioButton Tag="Filters" Style="{StaticResource NavItem}" Content="{svc:T Filters}" Click="Nav_Click" />
+                    <RadioButton Tag="Apps" Style="{StaticResource NavItem}" Content="{svc:T Apps}" Click="Nav_Click" />
+                    <RadioButton Tag="Networks" Style="{StaticResource NavItem}" Content="{svc:T Networks}" Click="Nav_Click" />
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
 
-        <TabControl x:Name="Tabs" Margin="8,8,8,0" Background="Transparent" BorderThickness="0,1,0,0">
-        <TabItem Header="Activity" Padding="14,4">
+        <!-- The open page -->
+        <DockPanel Grid.Column="1">
+            <TextBlock DockPanel.Dock="Top" x:Name="PageTitle" FontFamily="{StaticResource DisplayFont}" FontSize="24" Margin="24,16,24,4"
+                       Text="{Binding SelectedItem.Header, ElementName=Tabs, Converter={StaticResource Translate}}" />
+            <TabControl x:Name="Tabs" Style="{StaticResource Pager}" Margin="16,0,16,12">
+        <TabItem Header="Activity">
         <DockPanel>
         <!-- Toolbar -->
-        <Border DockPanel.Dock="Top" Padding="16,10,16,0">
-            <DockPanel LastChildFill="False">
-                <TextBlock Text="Show" Style="{StaticResource ToolbarLabel}" />
-                <ComboBox Width="90" ItemsSource="{Binding Activity.Filters}" SelectedItem="{Binding Activity.Filter}" />
-                <TextBox Width="220" Margin="12,0,0,0" VerticalAlignment="Center" VerticalContentAlignment="Center"
-                         Text="{Binding Activity.Search, UpdateSourceTrigger=PropertyChanged}"
-                         ToolTip="Search apps, paths and addresses" />
-                <TextBlock Text="Units" Style="{StaticResource ToolbarLabel}" Margin="16,0,6,0" />
-                <ComboBox Width="80" ItemsSource="{Binding Activity.UnitModes}" SelectedItem="{Binding Activity.Units}" />
-                <Menu Margin="12,0,0,0" VerticalAlignment="Center" Background="Transparent">
-                    <MenuItem Header="Columns ▾" Padding="6,3">
-                        <MenuItem Header="DL rate" IsCheckable="True" IsChecked="{Binding ShowRateIn}" />
-                        <MenuItem Header="UL rate" IsCheckable="True" IsChecked="{Binding ShowRateOut}" />
-                        <MenuItem Header="DL total" IsCheckable="True" IsChecked="{Binding ShowTotalIn}" />
-                        <MenuItem Header="UL total" IsCheckable="True" IsChecked="{Binding ShowTotalOut}" />
-                    </MenuItem>
-                    <MenuItem Header="View ▾" Padding="6,3">
-                        <MenuItem Header="Info pane" IsCheckable="True" IsChecked="{Binding ShowInfoPane}" />
-                        <MenuItem Header="Traffic chart" IsCheckable="True" IsChecked="{Binding ShowChart}" />
-                        <Separator />
-                        <MenuItem Header="Theme">
-                            <MenuItem Header="Follow Windows" IsCheckable="True"
-                                      IsChecked="{Binding Theme, Converter={StaticResource EnumToBool}, ConverterParameter={x:Static svc:AppTheme.System}}" />
-                            <MenuItem Header="Light" IsCheckable="True"
-                                      IsChecked="{Binding Theme, Converter={StaticResource EnumToBool}, ConverterParameter={x:Static svc:AppTheme.Light}}" />
-                            <MenuItem Header="Dark" IsCheckable="True"
-                                      IsChecked="{Binding Theme, Converter={StaticResource EnumToBool}, ConverterParameter={x:Static svc:AppTheme.Dark}}" />
-                        </MenuItem>
-                    </MenuItem>
-                </Menu>
-                <Button DockPanel.Dock="Right" Content="Reset totals" Padding="10,3" Click="ResetTotals_Click"
-                        IsEnabled="{Binding IsConnected}" />
-                <TextBlock DockPanel.Dock="Right" Text="{Binding Activity.TotalsText}" Margin="0,0,16,0"
-                           VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
-            </DockPanel>
-        </Border>
+        <DockPanel DockPanel.Dock="Top" Margin="8,8,8,0" LastChildFill="False">
+            <ComboBox Width="96" ItemsSource="{Binding Activity.Filters}" SelectedItem="{Binding Activity.Filter}" ToolTip="Which apps to list" />
+            <TextBox Width="240" Margin="8,0,0,0" VerticalContentAlignment="Center"
+                     Text="{Binding Activity.Search, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search apps, paths and addresses" />
+            <Button DockPanel.Dock="Right" Content="{svc:T Reset totals}" Click="ResetTotals_Click" IsEnabled="{Binding IsConnected}" />
+            <CheckBox DockPanel.Dock="Right" Content="{svc:T Traffic chart}" IsChecked="{Binding ShowChart}" Margin="0,0,16,0" VerticalAlignment="Center" />
+            <TextBlock DockPanel.Dock="Right" Text="{Binding Activity.TotalsText}" Margin="0,0,16,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
+        </DockPanel>
 
         <!-- Chart -->
-        <Border DockPanel.Dock="Bottom" Margin="16,0,16,12" Height="170"
+        <Border DockPanel.Dock="Bottom" Margin="8,0,8,0" Height="170"
                 Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="1" CornerRadius="6" Padding="10,6"
                 Visibility="{Binding ShowChart, Converter={StaticResource BoolToVis}}">
@@ -160,7 +165,7 @@
                                   ItemStringFormat="{}{0} s" />
                     </StackPanel>
                 </DockPanel>
-                <charts:TrafficChart x:Name="Chart" History="{Binding ChartHistory}"
+                <charts:TrafficChart x:Name="Chart" History="{Binding ChartHistory}" ChartStyle="{Binding AppSettings.ChartStyle}"
                                      WindowSeconds="{Binding ChartWindowSeconds}" Units="{Binding Activity.Units}"
                                      InBrush="{DynamicResource ChartInBrush}" OutBrush="{DynamicResource ChartOutBrush}"
                                      GridBrush="{DynamicResource ChartGridBrush}" LabelBrush="{DynamicResource MutedText}" />
@@ -168,11 +173,11 @@
         </Border>
 
         <!-- Main area: activity grid and info pane -->
-        <Grid Margin="16,10,16,12">
+        <Grid x:Name="ActivityArea" Margin="8,10,8,10">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" MinWidth="360" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="320" />
+                <ColumnDefinition Width="320" MinWidth="240" />
             </Grid.ColumnDefinitions>
 
             <DataGrid x:Name="ActivityGrid" Grid.Column="0" ItemsSource="{Binding Activity.Rows}"
@@ -235,72 +240,15 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="Block in" Width="76" MinWidth="76" CanUserSort="False">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate DataType="{x:Type vm:ActivityRow}">
-                                <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Tag="In"
-                                          IsChecked="{Binding IsBlockedIn, Mode=OneWay}" Click="QuickBlock_Click"
-                                          Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}"
-                                          ToolTip="Block incoming connections of this app" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="Block out" Width="86" MinWidth="86" CanUserSort="False">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate DataType="{x:Type vm:ActivityRow}">
-                                <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" Tag="Out"
-                                          IsChecked="{Binding IsBlockedOut, Mode=OneWay}" Click="QuickBlock_Click"
-                                          Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}"
-                                          ToolTip="Block outgoing connections of this app" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="DL Limit" Width="104" MinWidth="104" CanUserSort="False">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate DataType="{x:Type vm:ActivityRow}">
-                                <StackPanel Orientation="Horizontal" Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}"
-                                            ToolTip="Limit the download speed of this app in KB/s. Type a value and press Enter.">
-                                    <CheckBox VerticalAlignment="Center" Tag="In" IsChecked="{Binding IsLimitedIn, Mode=OneWay}" Click="QuickLimit_Click" />
-                                    <TextBox Tag="In" Text="{Binding LimitInText, Mode=OneWay}" Style="{StaticResource LimitBox}"
-                                             KeyDown="LimitBox_KeyDown" LostKeyboardFocus="LimitBox_LostFocus" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="UL Limit" Width="104" MinWidth="104" CanUserSort="False">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate DataType="{x:Type vm:ActivityRow}">
-                                <StackPanel Orientation="Horizontal" Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}"
-                                            ToolTip="Limit the upload speed of this app in KB/s. Type a value and press Enter.">
-                                    <CheckBox VerticalAlignment="Center" Tag="Out" IsChecked="{Binding IsLimitedOut, Mode=OneWay}" Click="QuickLimit_Click" />
-                                    <TextBox Tag="Out" Text="{Binding LimitOutText, Mode=OneWay}" Style="{StaticResource LimitBox}"
-                                             KeyDown="LimitBox_KeyDown" LostKeyboardFocus="LimitBox_LostFocus" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="Priority" Width="96" MinWidth="96" CanUserSort="True" SortMemberPath="Priority">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate DataType="{x:Type vm:ActivityRow}">
-                                <ComboBox ItemsSource="{Binding Data.PriorityLevels, Source={StaticResource Proxy}}"
-                                          SelectedItem="{Binding Priority, Mode=OneWay}" SelectionChanged="QuickPriority_Changed"
-                                          Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}}" Padding="6,1" MinHeight="0"
-                                          VerticalAlignment="Center" ToolTip="Priority of this app's traffic. Normal is the default." />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
                     <DataGridTextColumn Header="DL Rate" Width="88" MinWidth="88" SortMemberPath="RateIn" Binding="{Binding RateInText}"
-                                        ElementStyle="{StaticResource NumberCell}"
-                                        Visibility="{Binding Data.ShowRateIn, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
+                                        ElementStyle="{StaticResource NumberCell}" />
                     <DataGridTextColumn Header="UL Rate" Width="88" MinWidth="88" SortMemberPath="RateOut" Binding="{Binding RateOutText}"
-                                        ElementStyle="{StaticResource NumberCell}"
-                                        Visibility="{Binding Data.ShowRateOut, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
+                                        ElementStyle="{StaticResource NumberCell}" />
                     <DataGridTextColumn Header="DL Total" Width="92" MinWidth="92" SortMemberPath="TotalIn" Binding="{Binding TotalInText}"
-                                        ElementStyle="{StaticResource NumberCell}"
-                                        Visibility="{Binding Data.ShowTotalIn, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
+                                        ElementStyle="{StaticResource NumberCell}" />
                     <DataGridTextColumn Header="UL Total" Width="92" MinWidth="92" SortMemberPath="TotalOut" Binding="{Binding TotalOutText}"
-                                        ElementStyle="{StaticResource NumberCell}"
-                                        Visibility="{Binding Data.ShowTotalOut, Source={StaticResource Proxy}, Converter={StaticResource BoolToVis}}" />
+                                        ElementStyle="{StaticResource NumberCell}" />
+                    <DataGridTextColumn Header="Rules" Binding="{Binding RuleStatus}" Width="150" MinWidth="60" CanUserSort="False" />
                 </DataGrid.Columns>
             </DataGrid>
 
@@ -318,15 +266,53 @@
                 </TextBlock.Style>
             </TextBlock>
 
-            <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Center" Background="Transparent"
-                          Visibility="{Binding ShowInfoPane, Converter={StaticResource BoolToVis}}" />
+            <GridSplitter x:Name="InspectorSplitter" Grid.Column="1" Width="8" HorizontalAlignment="Center" Background="Transparent" DragCompleted="InspectorSplitter_DragCompleted" />
 
-            <Border Grid.Column="2" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
-                    BorderThickness="1" CornerRadius="6" Padding="12"
-                    Visibility="{Binding ShowInfoPane, Converter={StaticResource BoolToVis}}">
+            <Border x:Name="InspectorPane" Grid.Column="2" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="6" Padding="14,12">
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="{Binding Info.Title}" FontSize="15" FontWeight="SemiBold"
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding Info.Title}" FontFamily="{StaticResource DisplayFont}" FontSize="16"
                                TextWrapping="Wrap" Margin="0,0,0,10" />
+                    <!-- What applies to the selected app, and changing it -->
+                    <StackPanel x:Name="Inspector" DockPanel.Dock="Top" DataContext="{Binding SelectedRow}" Margin="0,0,0,10"
+                                Visibility="{Binding IsApp, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="{svc:T Block incoming}" VerticalAlignment="Center" Margin="0,4,12,4" />
+                            <CheckBox Grid.Column="1" Tag="In" IsChecked="{Binding IsBlockedIn, Mode=OneWay}" Click="QuickBlock_Click" ToolTip="Block incoming connections of this app" />
+                            <TextBlock Grid.Row="1" Text="{svc:T Block outgoing}" VerticalAlignment="Center" Margin="0,4,12,4" />
+                            <CheckBox Grid.Row="1" Grid.Column="1" Tag="Out" IsChecked="{Binding IsBlockedOut, Mode=OneWay}" Click="QuickBlock_Click" ToolTip="Block outgoing connections of this app" />
+                            <TextBlock Grid.Row="2" Text="{svc:T Download limit}" VerticalAlignment="Center" Margin="0,4,12,4" />
+                            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" ToolTip="Limit the download speed of this app. Type a value and press Enter.">
+                                <CheckBox VerticalAlignment="Center" Tag="In" IsChecked="{Binding IsLimitedIn, Mode=OneWay}" Click="QuickLimit_Click" />
+                                <TextBox Tag="In" Text="{Binding LimitInText, Mode=OneWay}" Style="{StaticResource LimitBox}" KeyDown="LimitBox_KeyDown" LostKeyboardFocus="LimitBox_LostFocus" />
+                                <TextBlock Text="KB/s" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
+                            </StackPanel>
+                            <TextBlock Grid.Row="3" Text="{svc:T Upload limit}" VerticalAlignment="Center" Margin="0,4,12,4" />
+                            <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" ToolTip="Limit the upload speed of this app. Type a value and press Enter.">
+                                <CheckBox VerticalAlignment="Center" Tag="Out" IsChecked="{Binding IsLimitedOut, Mode=OneWay}" Click="QuickLimit_Click" />
+                                <TextBox Tag="Out" Text="{Binding LimitOutText, Mode=OneWay}" Style="{StaticResource LimitBox}" KeyDown="LimitBox_KeyDown" LostKeyboardFocus="LimitBox_LostFocus" />
+                                <TextBlock Text="KB/s" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
+                            </StackPanel>
+                            <TextBlock Grid.Row="4" Text="{svc:T Priority}" VerticalAlignment="Center" Margin="0,4,12,4" />
+                            <ComboBox Grid.Row="4" Grid.Column="1" Width="110" HorizontalAlignment="Left" Margin="0,2"
+                                      ItemsSource="{Binding Data.PriorityLevels, Source={StaticResource Proxy}}"
+                                      SelectedItem="{Binding Priority, Mode=OneWay}" SelectionChanged="QuickPriority_Changed"
+                                      ToolTip="Priority of this app's traffic. Normal is the default." />
+                        </Grid>
+                        <WrapPanel Margin="0,8,0,0">
+                            <Button Content="{svc:T Add rule...}" Margin="0,0,6,6" Click="AddRuleForRow_Click" />
+                            <Button Content="{svc:T Connection history}" Margin="0,0,6,6" Click="ShowHistory_Click" />
+                            <Button Content="{svc:T Kill connections}" Margin="0,0,6,6" Click="Kill_Click" />
+                            <Button Content="{svc:T Hide app}" Margin="0,0,6,6" Click="Hide_Click" />
+                        </WrapPanel>
+                    </StackPanel>
                     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">
@@ -362,7 +348,7 @@
         </TabItem>
 
         <!-- Blocker -->
-        <TabItem Header="Blocker" Padding="14,4">
+        <TabItem Header="Blocker">
             <DockPanel Margin="8">
                 <Border DockPanel.Dock="Top" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1" CornerRadius="6" Padding="14,10" Margin="0,0,0,10" IsEnabled="{Binding IsConnected}">
@@ -389,7 +375,7 @@
                 </Border>
                 <TextBlock DockPanel.Dock="Top" Text="Pending blocker requests" FontWeight="SemiBold" Margin="2,0,0,6" />
                 <TextBlock DockPanel.Dock="Bottom" Margin="2,8,0,0" Foreground="{DynamicResource MutedText}"
-                           Text="Blocker rules are listed with all other rules in the Rules tab. Quick block per app is in the Activity tab." />
+                           Text="Blocker rules are listed in Rules. To block one app, select it in Activity." />
                 <DataGrid x:Name="PendingGrid" ItemsSource="{Binding Blocker.Pending}" AutoGenerateColumns="False" IsReadOnly="True"
                           HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="28" SelectionMode="Single"
                           Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}">
@@ -416,7 +402,7 @@
         </TabItem>
 
         <!-- Priorities -->
-        <TabItem x:Name="PrioritiesTab" Header="Priorities" Padding="14,4">
+        <TabItem x:Name="PrioritiesTab" Header="Priorities">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Margin="8" DataContext="{Binding Priorities}" MaxWidth="900" HorizontalAlignment="Left">
                     <Border Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
@@ -447,7 +433,7 @@
                               Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
                               CanUserSortColumns="False" HorizontalAlignment="Left">
                         <DataGrid.RowStyle>
-                            <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                            <Style TargetType="DataGridRow">
                                 <Setter Property="Foreground" Value="{DynamicResource DimText}" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsActive}" Value="True">
@@ -467,7 +453,7 @@
                         </DataGrid.Columns>
                     </DataGrid>
                     <TextBlock Margin="2,8,0,14" Foreground="{DynamicResource MutedText}" TextWrapping="Wrap"
-                               Text="Give apps a priority in the Activity tab (Priority column), or add Priority rules for any filter in the Rules tab. Empty 'allowed' means not restricted." />
+                               Text="To give an app a priority, select it in Activity. For any other filter, add a Priority rule in Rules. Empty 'allowed' means not restricted." />
                     <TextBlock Text="Bandwidth reservation" FontWeight="SemiBold" Margin="2,0,0,6" />
                     <Border Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="14,10" Margin="0,0,0,10"
@@ -542,10 +528,10 @@
         </TabItem>
 
         <!-- Quotas -->
-        <TabItem x:Name="QuotasTab" Header="Quotas" Padding="14,4">
+        <TabItem x:Name="QuotasTab" Header="Quotas">
             <DockPanel Margin="8">
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8" IsEnabled="{Binding IsConnected}">
-                    <Button Content="Add quota" Padding="10,3" Click="AddQuota_Click" />
+                    <Button Content="{svc:T Add quota}" Style="{StaticResource PrimaryButton}" Click="AddQuota_Click" />
                     <Button Content="Edit" Padding="10,3" Margin="8,0,0,0" Click="EditQuota_Click" />
                     <Button Content="Reset" Padding="10,3" Margin="24,0,0,0" Command="{Binding Quotas.ResetCommand}" CommandParameter="{Binding Quotas.Selected}"
                             ToolTip="Put the counter back to zero and end the overflow" />
@@ -579,26 +565,8 @@
         </TabItem>
 
         <!-- Statistics -->
-        <TabItem x:Name="StatsTab" Header="Statistics" Padding="14,4">
+        <TabItem x:Name="StatsTab" Header="Statistics">
             <DockPanel Margin="8" DataContext="{Binding Stats}">
-                <!-- What is recorded -->
-                <Border DockPanel.Dock="Top" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="6" Padding="14,8" Margin="0,0,0,8"
-                        IsEnabled="{Binding DataContext.IsConnected, RelativeSource={RelativeSource AncestorType=Window}}">
-                    <DockPanel>
-                        <Button DockPanel.Dock="Right" Content="Manage database..." Padding="10,3" Click="StatsManager_Click" />
-                        <StackPanel Orientation="Horizontal">
-                            <CheckBox Content="Record statistics" IsChecked="{Binding IsStatsEnabled}" FontWeight="SemiBold" VerticalAlignment="Center"
-                                      ToolTip="Write traffic to the stats database (per minute; older than 2 days per hour)" />
-                            <TextBlock Text="Save:" Margin="28,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
-                            <CheckBox Content="Internet" IsChecked="{Binding SaveInternet}" Margin="12,0,0,0" />
-                            <CheckBox Content="Local network" IsChecked="{Binding SaveLocalNetwork}" Margin="12,0,0,0" />
-                            <CheckBox Content="Loopback" IsChecked="{Binding SaveLoopback}" Margin="12,0,0,0"
-                                      ToolTip="Traffic between programs on this computer" />
-                        </StackPanel>
-                    </DockPanel>
-                </Border>
-
                 <!-- Time range -->
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" LastChildFill="False">
                     <ComboBox Width="96" ItemsSource="{Binding Ranges}" SelectedItem="{Binding Range}" />
@@ -732,7 +700,7 @@
         </TabItem>
 
         <!-- Apps -->
-        <TabItem x:Name="AppsTab" Header="Apps" Padding="14,4">
+        <TabItem x:Name="AppsTab" Header="Apps">
             <DockPanel Margin="8" DataContext="{Binding Apps}">
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False">
                     <ComboBox Width="110" ItemsSource="{Binding Availabilities}" SelectedItem="{Binding Availability}" />
@@ -765,7 +733,7 @@
         </TabItem>
 
         <!-- Networks -->
-        <TabItem x:Name="NetworksTab" Header="Networks" Padding="14,4">
+        <TabItem x:Name="NetworksTab" Header="Networks">
             <DockPanel Margin="8" DataContext="{Binding Networks}">
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
                     <Button Content="Add rule for network" Padding="10,3" Click="AddRuleForNetwork_Click" />
@@ -791,7 +759,7 @@
         </TabItem>
 
         <!-- Connection log -->
-        <TabItem x:Name="LogTab" Header="Log" Padding="14,4">
+        <TabItem x:Name="LogTab" Header="Log">
             <DockPanel Margin="8" DataContext="{Binding Log}">
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False">
                     <Button Content="{Binding ToggleText}" Width="70" Padding="0,3" Command="{Binding ToggleRunningCommand}" />
@@ -820,7 +788,7 @@
         </TabItem>
 
         <!-- Connection history -->
-        <TabItem x:Name="HistoryTab" Header="History" Padding="14,4">
+        <TabItem x:Name="HistoryTab" Header="History">
             <DockPanel Margin="8" DataContext="{Binding History}">
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False">
                     <ComboBox Width="90" ItemsSource="{Binding Ranges}" SelectedItem="{Binding Range}" />
@@ -858,10 +826,10 @@
         </TabItem>
 
         <!-- Filters -->
-        <TabItem Header="Filters" Padding="14,4">
+        <TabItem Header="Filters">
             <DockPanel Margin="8">
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                    <Button Content="Add filter" Padding="10,3" Click="AddFilter_Click" IsEnabled="{Binding IsConnected}" />
+                    <Button Content="{svc:T Add filter}" Style="{StaticResource PrimaryButton}" Click="AddFilter_Click" IsEnabled="{Binding IsConnected}" />
                     <Button Content="Edit" Padding="10,3" Margin="8,0,0,0" Click="EditFilter_Click" IsEnabled="{Binding IsConnected}" />
                     <Button Content="Delete" Padding="10,3" Margin="8,0,0,0" Click="DeleteFilter_Click" IsEnabled="{Binding IsConnected}" />
                     <Button Content="Add rule for filter" Padding="10,3" Margin="24,0,0,0" Click="AddRuleForFilter_Click" IsEnabled="{Binding IsConnected}" />
@@ -885,10 +853,11 @@
         </TabItem>
 
         <!-- Rules -->
-        <TabItem Header="Rules" Padding="14,4">
+        <TabItem Header="Rules">
             <DockPanel Margin="8">
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                    <Button Content="Add rule" Padding="10,3" Click="AddRule_Click" IsEnabled="{Binding IsConnected}" />
+                    <ComboBox Width="110" ItemsSource="{Binding Rules.KindFilters}" SelectedItem="{Binding Rules.KindFilter}" ToolTip="Which type of rule to list" Margin="0,0,12,0" />
+                    <Button Content="{svc:T Add rule}" Style="{StaticResource PrimaryButton}" Click="AddRule_Click" IsEnabled="{Binding IsConnected}" />
                     <Button Content="Edit" Padding="10,3" Margin="8,0,0,0" Click="EditRule_Click" IsEnabled="{Binding IsConnected}" />
                     <Button Content="Delete" Padding="10,3" Margin="8,0,0,0" Click="DeleteRule_Click" IsEnabled="{Binding IsConnected}" />
                     <Button Content="Enable / disable" Padding="10,3" Margin="8,0,0,0" IsEnabled="{Binding IsConnected}"
@@ -900,7 +869,7 @@
                             Command="{Binding Rules.MoveDownCommand}" CommandParameter="{Binding Rules.SelectedRule}" />
                     <TextBlock Text="{Binding Rules.LastError}" Foreground="{DynamicResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
                 </StackPanel>
-                <DataGrid x:Name="RulesGrid" ItemsSource="{Binding Rules.Rules}" SelectedItem="{Binding Rules.SelectedRule}"
+                <DataGrid x:Name="RulesGrid" ItemsSource="{Binding Rules.VisibleRules}" SelectedItem="{Binding Rules.SelectedRule}"
                           AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single" HeadersVisibility="Column"
                           GridLinesVisibility="None" RowHeight="24" Background="{DynamicResource PanelBackground}"
                           BorderBrush="{DynamicResource BorderBrush}" AlternatingRowBackground="{DynamicResource AltRowBackground}"
@@ -929,6 +898,119 @@
                 </DataGrid>
             </DockPanel>
         </TabItem>
-        </TabControl>
-    </DockPanel>
+
+        <!-- Settings -->
+        <TabItem x:Name="SettingsTab" Header="Settings">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="8" MaxWidth="760" HorizontalAlignment="Left">
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <TextBlock Text="{svc:T Appearance}" Style="{StaticResource SectionTitle}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="{svc:T Theme}" VerticalAlignment="Center" />
+                                <ComboBox Grid.Column="1" Width="170" HorizontalAlignment="Left" Margin="0,3" ItemsSource="{Binding AppThemes}" SelectedItem="{Binding Theme}" />
+                                <TextBlock Grid.Row="1" Text="{svc:T Accent color}" VerticalAlignment="Center" />
+                                <ComboBox Grid.Row="1" Grid.Column="1" Width="170" HorizontalAlignment="Left" Margin="0,3" ItemsSource="{Binding AppSettings.Accents}" SelectedItem="{Binding AppSettings.Accent}" />
+                                <TextBlock Grid.Row="2" Text="{svc:T Language}" VerticalAlignment="Center" />
+                                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,3">
+                                    <ComboBox Width="170" ItemsSource="{Binding AppSettings.Languages}" SelectedItem="{Binding AppSettings.Language}" DisplayMemberPath="Name" />
+                                    <TextBlock Text="{Binding AppSettings.LanguageNote}" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
+                                </StackPanel>
+                                <TextBlock Grid.Row="3" Text="{svc:T Units}" VerticalAlignment="Center" />
+                                <ComboBox Grid.Row="3" Grid.Column="1" Width="170" HorizontalAlignment="Left" Margin="0,3" ItemsSource="{Binding Activity.UnitModes}" SelectedItem="{Binding Activity.Units}" />
+                                <TextBlock Grid.Row="4" Text="{svc:T Chart style}" VerticalAlignment="Center" />
+                                <ComboBox Grid.Row="4" Grid.Column="1" Width="170" HorizontalAlignment="Left" Margin="0,3" ItemsSource="{Binding AppSettings.ChartStyles}" SelectedItem="{Binding AppSettings.ChartStyle}" />
+                                <TextBlock Grid.Row="5" Text="{svc:T Info pane}" VerticalAlignment="Center" />
+                                <CheckBox Grid.Row="5" Grid.Column="1" Margin="0,5" IsChecked="{Binding ShowInfoPane}" Content="Show details of the selected app or connection" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <TextBlock Text="{svc:T Behavior}" Style="{StaticResource SectionTitle}" />
+                            <CheckBox Content="{svc:T Start NetWarden when I sign in}" IsChecked="{Binding AppSettings.RunOnStartup}" Margin="0,3" />
+                            <CheckBox Content="{svc:T Minimize to the notification area}" IsChecked="{Binding AppSettings.MinimizeToTray}" Margin="0,3" />
+                            <CheckBox Content="{svc:T Keep running in the notification area when I close the window}" IsChecked="{Binding AppSettings.CloseToTray}" Margin="0,3" />
+                            <CheckBox Content="{svc:T Show notifications}" IsChecked="{Binding AppSettings.Notifications}" Margin="0,3"
+                                      ToolTip="Tells you about exceeded quotas and connection requests while the window is hidden" />
+                            <TextBlock Text="{Binding AppSettings.StartupError}" Foreground="{DynamicResource BadBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <TextBlock Text="{svc:T Hotkeys}" Style="{StaticResource SectionTitle}" />
+                            <ItemsControl ItemsSource="{Binding AppSettings.Hotkeys}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,2">
+                                            <Button DockPanel.Dock="Right" Content="{svc:T Delete}" Click="RemoveHotkey_Click" />
+                                            <TextBlock Text="{Binding Gesture}" Width="150" VerticalAlignment="Center" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Target, Converter={StaticResource HotkeyTargetName}}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBox x:Name="HotkeyBox" Width="140" Text="{Binding AppSettings.NewHotkeyText, UpdateSourceTrigger=PropertyChanged}"
+                                         PreviewKeyDown="HotkeyBox_PreviewKeyDown" ToolTip="Press the key combination here" />
+                                <ComboBox Width="320" Margin="8,0,0,0" ItemsSource="{Binding AppSettings.HotkeyTargets}" SelectedItem="{Binding AppSettings.NewHotkeyTarget}" DisplayMemberPath="Name" />
+                                <Button Content="{svc:T Add}" Margin="8,0,0,0" Command="{Binding AppSettings.AddHotkeyCommand}" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding AppSettings.HotkeyError}" Foreground="{DynamicResource BadBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <TextBlock Text="{svc:T Layout profiles}" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Text="Saves your columns, sorting and panes under a name, to switch between arrangements." Foreground="{DynamicResource MutedText}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox Width="170" Text="{Binding AppSettings.NewProfileName, UpdateSourceTrigger=PropertyChanged}" ToolTip="Name of the new profile" />
+                                <Button Content="Save current layout" Margin="8,0,0,0" Command="{Binding AppSettings.SaveProfileCommand}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <ComboBox Width="170" ItemsSource="{Binding AppSettings.ProfileNames}" SelectedItem="{Binding AppSettings.SelectedProfile}" />
+                                <Button Content="Use" Margin="8,0,0,0" Command="{Binding AppSettings.ApplyProfileCommand}" />
+                                <Button Content="{svc:T Delete}" Margin="8,0,0,0" Command="{Binding AppSettings.DeleteProfileCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}" DataContext="{Binding Stats}"
+                            IsEnabled="{Binding DataContext.IsConnected, RelativeSource={RelativeSource AncestorType=Window}}">
+                        <StackPanel>
+                            <TextBlock Text="{svc:T Statistics}" Style="{StaticResource SectionTitle}" />
+                            <CheckBox Content="{svc:T Record statistics}" IsChecked="{Binding IsStatsEnabled}"
+                                      ToolTip="Write traffic to the stats database (per minute; older than 2 days per hour)" />
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,8">
+                                <TextBlock Text="Save traffic of:" VerticalAlignment="Center" Foreground="{DynamicResource MutedText}" />
+                                <CheckBox Content="Internet" IsChecked="{Binding SaveInternet}" Margin="12,0,0,0" />
+                                <CheckBox Content="Local network" IsChecked="{Binding SaveLocalNetwork}" Margin="12,0,0,0" />
+                                <CheckBox Content="Loopback" IsChecked="{Binding SaveLoopback}" Margin="12,0,0,0" ToolTip="Traffic between programs on this computer" />
+                            </StackPanel>
+                            <Button Content="{svc:T Manage database...}" HorizontalAlignment="Left" Click="StatsManager_Click" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Section}">
+                        <StackPanel>
+                            <TextBlock Text="{svc:T About}" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Text="{Binding ServiceSummary}" Foreground="{DynamicResource MutedText}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+            </TabControl>
+        </DockPanel>
+    </Grid>
 </Window>

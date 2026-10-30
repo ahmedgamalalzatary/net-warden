@@ -5,7 +5,14 @@ using NetWarden.Shared.Formatting;
 
 namespace NetWarden.Client.Charts;
 
-/// <summary>Line chart of download/upload rate over a time window. Call <see cref="Refresh"/> after new samples.</summary>
+public enum ChartStyle
+{
+    Line,
+    Column,
+    Stacked,
+}
+
+/// <summary>Chart of download/upload rate over a time window. Call <see cref="Refresh"/> after new samples.</summary>
 public sealed class TrafficChart : FrameworkElement
 {
     public static readonly DependencyProperty HistoryProperty = DependencyProperty.Register(
@@ -19,6 +26,18 @@ public sealed class TrafficChart : FrameworkElement
     public static readonly DependencyProperty UnitsProperty = DependencyProperty.Register(
         nameof(Units), typeof(UnitMode), typeof(TrafficChart),
         new FrameworkPropertyMetadata(UnitMode.Bytes, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty ChartStyleProperty = DependencyProperty.Register(
+        nameof(ChartStyle), typeof(ChartStyle), typeof(TrafficChart),
+        new FrameworkPropertyMetadata(ChartStyle.Line, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    /// <summary>Only the lines, without axes: the meter in the rail.</summary>
+    public static readonly DependencyProperty IsCompactProperty = DependencyProperty.Register(
+        nameof(IsCompact), typeof(bool), typeof(TrafficChart),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public ChartStyle ChartStyle { get => (ChartStyle)GetValue(ChartStyleProperty); set => SetValue(ChartStyleProperty, value); }
+    public bool IsCompact { get => (bool)GetValue(IsCompactProperty); set => SetValue(IsCompactProperty, value); }
 
     // Colors come from the theme (set with DynamicResource), so switching themes repaints the chart.
     public static readonly DependencyProperty InBrushProperty = BrushProperty(nameof(InBrush), Color.FromRgb(0x25, 0x63, 0xEB));
@@ -57,7 +76,7 @@ public sealed class TrafficChart : FrameworkElement
 
     protected override void OnRender(DrawingContext dc)
     {
-        const double left = 72, top = 8, bottom = 18, right = 8;
+        double left = IsCompact ? 0 : 72, top = IsCompact ? 1 : 8, bottom = IsCompact ? 1 : 18, right = IsCompact ? 0 : 8;
         double width = ActualWidth - left - right;
         double height = ActualHeight - top - bottom;
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, ActualWidth, ActualHeight));
@@ -66,12 +85,13 @@ public sealed class TrafficChart : FrameworkElement
 
         var window = TimeSpan.FromSeconds(WindowSeconds);
         var points = History?.Last(window) ?? [];
-        long max = Math.Max(1024, points.Count == 0 ? 0 : points.Max(p => Math.Max(p.In, p.Out)));
+        bool stacked = ChartStyle == ChartStyle.Stacked && !IsCompact;
+        long max = Math.Max(1024, points.Count == 0 ? 0 : points.Max(p => stacked ? p.In + p.Out : Math.Max(p.In, p.Out)));
         long scale = NiceCeiling(max);
         double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var gridPen = Freeze(new Pen(GridBrush, 1));
 
-        for (int i = 0; i <= 4; i++)
+        for (int i = 0; i <= 4 && !IsCompact; i++)
         {
             double y = top + height * i / 4;
             dc.DrawLine(gridPen, new Point(left, y), new Point(left + width, y));
@@ -79,10 +99,13 @@ public sealed class TrafficChart : FrameworkElement
             var text = Text(ByteFormatter.Rate(value, Units), dpi);
             dc.DrawText(text, new Point(left - 6 - text.Width, y - text.Height / 2));
         }
-        var now = Text("now", dpi);
-        dc.DrawText(now, new Point(left + width - now.Width, top + height + 2));
-        var start = Text($"-{WindowSeconds}s", dpi);
-        dc.DrawText(start, new Point(left, top + height + 2));
+        if (!IsCompact)
+        {
+            var now = Text("now", dpi);
+            dc.DrawText(now, new Point(left + width - now.Width, top + height + 2));
+            var start = Text($"-{WindowSeconds}s", dpi);
+            dc.DrawText(start, new Point(left, top + height + 2));
+        }
 
         if (points.Count < 2)
             return;
@@ -91,6 +114,12 @@ public sealed class TrafficChart : FrameworkElement
         Point Map(RatePoint p, long v) => new(
             left + width * (1 - (end - p.Time).TotalSeconds / window.TotalSeconds),
             top + height * (1 - (double)v / scale));
+
+        if (!IsCompact && ChartStyle != ChartStyle.Line)
+        {
+            DrawColumns(dc, points, end, window, left, top, width, height, scale);
+            return;
+        }
 
         var inLine = new StreamGeometry();
         var inArea = new StreamGeometry();
@@ -113,6 +142,27 @@ public sealed class TrafficChart : FrameworkElement
         dc.DrawGeometry(Freeze(inFill), null, inArea);
         dc.DrawGeometry(null, Freeze(new Pen(InBrush, 1.6)), inLine);
         dc.DrawGeometry(null, Freeze(new Pen(OutBrush, 1.6)), outLine);
+        dc.Pop();
+    }
+
+    /// <summary>One column per sample: side by side, or upload on top of download when stacked.</summary>
+    private void DrawColumns(DrawingContext dc, IReadOnlyList<RatePoint> points, DateTimeOffset end, TimeSpan window,
+        double left, double top, double width, double height, long scale)
+    {
+        bool stacked = ChartStyle == ChartStyle.Stacked;
+        double slot = width / window.TotalSeconds;
+        double bar = Math.Max(1, stacked ? slot - 1 : slot / 2 - 0.5);
+        dc.PushClip(new RectangleGeometry(new Rect(left, top, width, height)));
+        foreach (var p in points)
+        {
+            double x = left + width * (1 - (end - p.Time).TotalSeconds / window.TotalSeconds) - slot;
+            double inHeight = height * p.In / scale, outHeight = height * p.Out / scale;
+            double baseY = top + height;
+            dc.DrawRectangle(InBrush, null, new Rect(x, baseY - inHeight, bar, inHeight));
+            dc.DrawRectangle(OutBrush, null, stacked
+                ? new Rect(x, baseY - inHeight - outHeight, bar, outHeight)
+                : new Rect(x + bar + 0.5, baseY - outHeight, bar, outHeight));
+        }
         dc.Pop();
     }
 

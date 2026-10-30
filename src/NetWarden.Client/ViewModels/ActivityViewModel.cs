@@ -51,6 +51,8 @@ public sealed partial class ActivityViewModel : ObservableObject
         _ports = ports;
         _filter = settings.Filter;
         _units = settings.Units;
+        _sortColumn = settings.ActivitySort;
+        _sortDescending = settings.ActivitySortDescending;
     }
 
     public ObservableCollection<ActivityRow> Rows { get; } = [];
@@ -105,8 +107,20 @@ public sealed partial class ActivityViewModel : ObservableObject
     }
 
     partial void OnSearchChanged(string value) => Rebuild();
-    partial void OnSortColumnChanged(ActivitySortColumn value) => Rebuild();
-    partial void OnSortDescendingChanged(bool value) => Rebuild();
+
+    partial void OnSortColumnChanged(ActivitySortColumn value)
+    {
+        _settings.ActivitySort = value;
+        _saveSettings();
+        Rebuild();
+    }
+
+    partial void OnSortDescendingChanged(bool value)
+    {
+        _settings.ActivitySortDescending = value;
+        _saveSettings();
+        Rebuild();
+    }
 
     partial void OnUnitsChanged(UnitMode value)
     {

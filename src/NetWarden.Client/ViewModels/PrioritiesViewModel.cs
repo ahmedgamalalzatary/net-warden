@@ -107,7 +107,7 @@ public sealed partial class PrioritiesViewModel(Func<ServiceSettings?> settings,
             $"Estimated line: {ByteFormatter.Rate(status.Download.CapacityBytesPerSecond, UnitMode.Bytes)} down · " +
             $"{ByteFormatter.Rate(status.Upload.CapacityBytesPerSecond, UnitMode.Bytes)} up";
         StateText = settings() is { IsPriorityEnabled: false } ? "Priorities are off."
-            : !hasPriorityRules ? "No priority rules: every app is Normal. Pick a priority per app in the Activity tab."
+            : !hasPriorityRules ? "No priority rules: every app is Normal. To change one, select it in Activity."
             : status is null ? "Waiting for the limiter's packet filter..."
             : status.IsActive ? "Restricting lower priorities now."
             : "Watching traffic; nothing needs restricting.";

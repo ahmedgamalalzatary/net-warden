@@ -72,12 +72,12 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 10.4 Geo-IP country and flag, WHOIS lookup, "ask web" / map link. Town left out: the city database is far larger than the whole app, and online lookups would send addresses to a third party
 
 ## Phase 11 - Client polish
-- [ ] 11.0 Clean UI reimplementation (load the frontend-design skill first; use the whole app as a real user before designing). Easy to use, not everything in one place; clear navigation; remembers the user's choices (sorting, columns, selected views, window layout)
-- [ ] 11.1 Tray icon (min/close to tray, show/hide, pending requests menu)
-- [ ] 11.2 Global hotkeys to toggle rules
-- [ ] 11.3 Run on startup, notifications
-- [ ] 11.4 Themes / accent colors, dockable panes and layout profiles, column/stacked chart styles
-- [ ] 11.5 Localization
+- [x] 11.0 Clean UI reimplementation: grouped navigation rail, live meter, read-only activity grid with an inspector, Settings page, rule editor in tabs; remembers sorting, columns, page, filters and window
+- [x] 11.1 Tray icon (min/close to tray, show/hide, pending requests menu)
+- [x] 11.2 Global hotkeys to toggle rules
+- [x] 11.3 Run on startup, notifications
+- [x] 11.4 Accent colors, layout profiles, column/stacked chart styles. Free-floating dockable panes left out: the rail and inspector replace them, because docking is what made everything sit in one place
+- [x] 11.5 Localization: language files, right-to-left, Arabic for navigation, Settings and common actions; other text falls back to English
 
 ## Phase 12 - Advanced
 - [ ] 12.1 Remote administration (TCP, connect to another machine)

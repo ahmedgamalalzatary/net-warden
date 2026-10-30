@@ -36,14 +36,23 @@ public partial class App : Application
             }
         }
 
+        Loc.Current = new Loc(settings.Language);
         var themes = new ThemeManager(this);
         themes.Apply(settings.Theme);
+        themes.ApplyAccent(settings.Accent);
 
         _connection = new ServiceConnection();
         var viewModel = new MainViewModel(_connection, Dispatcher, settings, Save, new IconCache(), PortNames.LoadSystem());
         viewModel.ThemeChanged += themes.Apply;
-        MainWindow = new MainWindow { DataContext = viewModel };
-        MainWindow.Show();
+        viewModel.AppSettings.AppearanceChanged += () => themes.ApplyAccent(settings.Accent);
+        var window = new MainWindow { DataContext = viewModel };
+        if (Loc.Current.IsRightToLeft)
+            window.FlowDirection = FlowDirection.RightToLeft;
+        MainWindow = window;
+        window.StartDesktopFeatures();
+        // Started at logon by the startup task: stay in the notification area.
+        if (!e.Args.Contains("--tray"))
+            window.Show();
         _connection.Start();
     }
 

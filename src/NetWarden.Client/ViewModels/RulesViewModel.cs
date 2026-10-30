@@ -31,10 +31,64 @@ public sealed partial class RuleItem(RuleView view) : ObservableObject
     public string Notes => Rule.Notes ?? "";
 }
 
-/// <summary>The Filters and Rules tabs, kept in sync with the service.</summary>
-public sealed partial class RulesViewModel(IServiceRequester service) : ObservableObject
+public enum RuleKindFilter
+{
+    All,
+    Limits,
+    Blocks,
+    Priorities,
+    Quotas,
+    Ignore,
+}
+
+/// <summary>The Filters and Rules pages, kept in sync with the service.</summary>
+public sealed partial class RulesViewModel(IServiceRequester service, ClientSettings? settings = null, Action? saveSettings = null) : ObservableObject
 {
     private long _generation = -1;
+    private RuleKindFilter _kindFilter = settings?.RuleKinds ?? RuleKindFilter.All;
+
+    /// <summary>The rules the Rules page shows: those of the chosen type.</summary>
+    public ObservableCollection<RuleItem> VisibleRules { get; } = [];
+
+    public IReadOnlyList<RuleKindFilter> KindFilters { get; } = Enum.GetValues<RuleKindFilter>();
+
+    public RuleKindFilter KindFilter
+    {
+        get => _kindFilter;
+        set
+        {
+            if (!SetProperty(ref _kindFilter, value))
+                return;
+            if (settings is not null)
+                settings.RuleKinds = value;
+            saveSettings?.Invoke();
+            ShowVisibleRules();
+        }
+    }
+
+    private void ShowVisibleRules()
+    {
+        VisibleRules.Clear();
+        foreach (var rule in Rules)
+            if (KindFilter == RuleKindFilter.All || KindFilter == Group(rule.Rule.Kind))
+                VisibleRules.Add(rule);
+    }
+
+    private static RuleKindFilter Group(RuleKind kind) => kind switch
+    {
+        RuleKind.Limit => RuleKindFilter.Limits,
+        RuleKind.Firewall => RuleKindFilter.Blocks,
+        RuleKind.Priority => RuleKindFilter.Priorities,
+        RuleKind.Quota => RuleKindFilter.Quotas,
+        _ => RuleKindFilter.Ignore,
+    };
+
+    /// <summary>Flips a rule on or off, for hotkeys.</summary>
+    public async Task ToggleByIdAsync(Guid id)
+    {
+        if (Rules.FirstOrDefault(r => r.Rule.Id == id) is { } item)
+            await ToggleEnabledAsync(item);
+    }
 
     public ObservableCollection<FilterItem> Filters { get; } = [];
     public ObservableCollection<RuleItem> Rules { get; } = [];
@@ -75,6 +129,7 @@ public sealed partial class RulesViewModel(IServiceRequester service) : Observab
         Rules.Clear();
         foreach (var r in snapshot.Rules)
             Rules.Add(new RuleItem(r));
+        ShowVisibleRules();
 
         SelectedRule = Rules.FirstOrDefault(r => r.Rule.Id == selectedRule);
         SelectedFilter = Filters.FirstOrDefault(f => f.Filter.Id == selectedFilter);
