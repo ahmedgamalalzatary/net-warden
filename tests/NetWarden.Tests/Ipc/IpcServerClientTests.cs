@@ -5,6 +5,52 @@ using NetWarden.Shared.Ipc;
 
 namespace NetWarden.Tests.Ipc;
 
+public class ClientClosingRaceTests
+{
+    /// <summary>The app only handles IpcDisconnectedException, so a closing client must never throw anything else.</summary>
+    [Fact]
+    public async Task Requests_racing_a_closing_client_only_see_disconnected()
+    {
+        string pipe = TestPipes.NewName();
+        var server = new IpcServer(pipe, new IpcDispatcher().Register("ping", _ => Task.FromResult("pong")), Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        server.Start();
+        var unexpected = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+        try
+        {
+            for (int round = 0; round < 150; round++)
+            {
+                var client = new ServiceClient(pipe);
+                await client.ConnectAsync(TimeSpan.FromSeconds(5));
+                var requests = Enumerable.Range(0, 4).Select(_ => Task.Run(async () =>
+                {
+                    for (int i = 0; i < 20; i++)
+                    {
+                        try
+                        {
+                            await client.RequestAsync<string>("ping");
+                        }
+                        catch (IpcDisconnectedException)
+                        {
+                        }
+                        catch (Exception ex)
+                        {
+                            unexpected.Add(ex);
+                        }
+                    }
+                })).ToList();
+                await client.DisposeAsync();
+                await Task.WhenAll(requests);
+            }
+        }
+        finally
+        {
+            await server.DisposeAsync();
+        }
+
+        Assert.True(unexpected.IsEmpty, string.Join(Environment.NewLine, unexpected.Select(e => e.GetType().Name).Distinct()));
+    }
+}
+
 public sealed class IpcServerClientTests : IAsyncLifetime
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(5);

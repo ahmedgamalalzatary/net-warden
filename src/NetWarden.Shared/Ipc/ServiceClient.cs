@@ -126,7 +126,7 @@ public sealed class ServiceClient : IAsyncDisposable
             {
                 await MessageFraming.WriteAsync(stream, request, ct).ConfigureAwait(false);
             }
-            catch (IOException ex)
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException)
             {
                 throw new IpcDisconnectedException("The connection to the service is closed.", ex);
             }
@@ -205,6 +205,6 @@ public sealed class ServiceClient : IAsyncDisposable
             await _readLoop.ConfigureAwait(false);
         MarkDisconnected(null);
         _cts.Dispose();
-        _writeLock.Dispose();
+        // _writeLock stays undisposed: that would strand requests waiting for it. It holds no OS handle.
     }
 }
