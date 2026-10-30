@@ -73,6 +73,13 @@ public sealed class UiTourTests(WpfHarness wpf)
                 }
                 window.Close();
 
+                var tall = new MainWindow { DataContext = vm, Width = 1000, Height = 2300, ShowInTaskbar = false };
+                tall.Show();
+                tall.ShowPage("Settings");
+                await WpfHarness.Settle(1000);
+                ThemeTests.Save(tall, Path.Combine(folder, "Settings-whole.png"));
+                tall.Close();
+
                 Loc.Current = new Loc("ar");
                 var arabic = new MainWindow
                 {
