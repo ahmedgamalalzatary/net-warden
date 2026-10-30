@@ -53,9 +53,9 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 6.4 Export CSV; stats manager (DB info, delete by time, delete per app, compact)
 
 ## Phase 7 - Quotas
-- [ ] 7.1 Quota rules: data cap per filter, in/out, reset period
-- [ ] 7.2 Overflow actions: enable other rules (e.g. block/limit), alert window, kill connections
-- [ ] 7.3 Quota status, reset, init from stats
+- [x] 7.1 Quota rules: data cap per filter, in/out, reset schedule (never, once, every day, days, day of month, at a time)
+- [x] 7.2 Overflow actions: enable other rules (e.g. block/limit), alert window, kill connections
+- [x] 7.3 Quota status, reset, init from stats
 
 ## Phase 8 - Scheduler
 - [ ] 8.1 Time conditions on any rule: start / stop / reset / delete
@@ -72,6 +72,7 @@ Status: [ ] todo  [~] in progress  [x] done
 - [ ] 10.4 Geo-IP country/flag/town, WHOIS lookup, "ask web" / map link
 
 ## Phase 11 - Client polish
+- [ ] 11.0 Clean UI reimplementation (load the frontend-design skill first; use the whole app as a real user before designing). Easy to use, not everything in one place; clear navigation; remembers the user's choices (sorting, columns, selected views, window layout)
 - [ ] 11.1 Tray icon (min/close to tray, show/hide, pending requests menu)
 - [ ] 11.2 Global hotkeys to toggle rules
 - [ ] 11.3 Run on startup, notifications

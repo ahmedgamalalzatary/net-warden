@@ -79,6 +79,8 @@ public sealed class ThemeTests(WpfHarness wpf)
                     new RuleEditorWindow(new RuleEditorViewModel(null, PredefinedFilters.All, PredefinedFilters.Internet, RuleKind.Priority), _ => Task.FromResult<string?>(null)),
                     new BlockerPromptWindow(new BlockerPromptViewModel(blocker)),
                     new StatsManagerWindow(new StatsManagerViewModel(StatsService())),
+                    new QuotaAlertWindow(new QuotaAlert(Guid.NewGuid(), "Browser", 2048, 1024, DateTimeOffset.UtcNow), () => Task.CompletedTask),
+                    new RuleEditorWindow(new RuleEditorViewModel(null, PredefinedFilters.All, PredefinedFilters.Internet, RuleKind.Quota), _ => Task.FromResult<string?>(null)),
                 ];
                 foreach (var window in windows)
                 {

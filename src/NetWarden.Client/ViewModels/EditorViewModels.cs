@@ -139,11 +139,52 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     }
 }
 
+public enum QuotaUnit
+{
+    Bytes,
+    Kilobytes,
+    Megabytes,
+    Gigabytes,
+    Bits,
+    Kilobits,
+    Megabits,
+    Gigabits,
+}
+
+/// <summary>What the editor offers for a quota's reset; everything but Never maps to a <see cref="ScheduleRepeat"/>.</summary>
+public enum QuotaResetRepeat
+{
+    Never,
+    Once,
+    EveryDay,
+    Days,
+    DayOfMonth,
+}
+
+public sealed partial class DayChoice(DayOfWeek day, bool selected) : ObservableObject
+{
+    public DayOfWeek Day { get; } = day;
+    public string Name => Day.ToString()[..3];
+
+    [ObservableProperty]
+    private bool _isSelected = selected;
+}
+
+public sealed partial class RuleChoice(RuleDefinition rule, string text, bool selected) : ObservableObject
+{
+    public RuleDefinition Rule { get; } = rule;
+    public string Text { get; } = text;
+
+    [ObservableProperty]
+    private bool _isSelected = selected;
+}
+
 public sealed partial class RuleEditorViewModel : ObservableObject
 {
     private readonly RuleDefinition? _original;
 
-    public RuleEditorViewModel(RuleDefinition? original, IReadOnlyList<FilterDefinition> filters, Guid? filterId = null, RuleKind? kind = null)
+    public RuleEditorViewModel(RuleDefinition? original, IReadOnlyList<FilterDefinition> filters, Guid? filterId = null, RuleKind? kind = null,
+        IReadOnlyList<RuleView>? rules = null)
     {
         _original = original;
         Filters = filters;
@@ -160,6 +201,147 @@ public sealed partial class RuleEditorViewModel : ObservableObject
         _priority = original?.Priority ?? PriorityLevel.High;
         if (original is null && _kind == RuleKind.Firewall)
             _direction = RuleDirection.Both;
+
+        (_quotaAmount, _quotaUnit) = AmountOf(original?.QuotaBytes ?? 1024L * 1024 * 1024);
+        var reset = original?.QuotaReset;
+        _resetRepeat = reset is null ? QuotaResetRepeat.Never : (QuotaResetRepeat)Enum.Parse(typeof(QuotaResetRepeat), reset.Repeat.ToString());
+        _resetTime = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(reset?.MinuteOfDay ?? 0)).ToString("HH:mm");
+        _resetDate = reset?.Date?.ToDateTime(TimeOnly.MinValue);
+        _resetDayOfMonth = reset?.DayOfMonth ?? 1;
+        ResetDays = [.. new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday }
+            .Select(d => new DayChoice(d, reset?.Days?.Contains(d) == true))];
+        _overflowAlert = original?.OverflowAlert ?? true;
+        _overflowKillConnections = original?.OverflowKillConnections ?? false;
+        foreach (var view in rules ?? [])
+            if (view.Rule.Id != original?.Id)
+                OverflowChoices.Add(new RuleChoice(view.Rule, ChoiceText(view.Rule, view.FilterName), original?.OverflowRuleIds?.Contains(view.Rule.Id) == true));
+    }
+
+    /// <summary>Saves a rule right away, for the overflow rule buttons; set by the window's owner.</summary>
+    public Func<RuleDefinition, Task<RuleDefinition?>>? CreateRule { get; set; }
+
+    public IReadOnlyList<QuotaUnit> QuotaUnits { get; } = Enum.GetValues<QuotaUnit>();
+    public IReadOnlyList<QuotaResetRepeat> ResetRepeats { get; } = Enum.GetValues<QuotaResetRepeat>();
+    public IReadOnlyList<int> DaysOfMonth { get; } = Enumerable.Range(1, 31).ToList();
+    public IReadOnlyList<DayChoice> ResetDays { get; }
+    public ObservableCollection<RuleChoice> OverflowChoices { get; } = [];
+
+    [ObservableProperty]
+    private double _quotaAmount;
+
+    [ObservableProperty]
+    private QuotaUnit _quotaUnit;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasResetTime), nameof(IsResetOnce), nameof(IsResetDays), nameof(IsResetDayOfMonth))]
+    private QuotaResetRepeat _resetRepeat;
+
+    /// <summary>Time of day as HH:mm.</summary>
+    [ObservableProperty]
+    private string _resetTime;
+
+    [ObservableProperty]
+    private DateTime? _resetDate;
+
+    [ObservableProperty]
+    private int _resetDayOfMonth;
+
+    [ObservableProperty]
+    private bool _overflowAlert;
+
+    [ObservableProperty]
+    private bool _overflowKillConnections;
+
+    [ObservableProperty]
+    private double _overflowLimitKilobytes = 100;
+
+    public bool IsQuota => Kind == RuleKind.Quota;
+    public bool HasResetTime => ResetRepeat != QuotaResetRepeat.Never;
+    public bool IsResetOnce => ResetRepeat == QuotaResetRepeat.Once;
+    public bool IsResetDays => ResetRepeat == QuotaResetRepeat.Days;
+    public bool IsResetDayOfMonth => ResetRepeat == QuotaResetRepeat.DayOfMonth;
+
+    private static string ChoiceText(RuleDefinition rule, string filterName) =>
+        $"{RuleText.Kind(rule.Kind)} {rule.Direction}: {RuleText.Value(rule)} for {filterName}";
+
+    private static double UnitBytes(QuotaUnit unit) => unit switch
+    {
+        QuotaUnit.Bytes => 1,
+        QuotaUnit.Kilobytes => 1024,
+        QuotaUnit.Megabytes => 1024 * 1024,
+        QuotaUnit.Gigabytes => 1024 * 1024 * 1024,
+        QuotaUnit.Bits => 1.0 / 8,
+        QuotaUnit.Kilobits => 1024.0 / 8,
+        QuotaUnit.Megabits => 1024.0 * 1024 / 8,
+        _ => 1024.0 * 1024 * 1024 / 8,
+    };
+
+    private static (double, QuotaUnit) AmountOf(long bytes)
+    {
+        foreach (var unit in new[] { QuotaUnit.Gigabytes, QuotaUnit.Megabytes, QuotaUnit.Kilobytes })
+            if (bytes >= UnitBytes(unit))
+                return (bytes / UnitBytes(unit), unit);
+        return (bytes, QuotaUnit.Bytes);
+    }
+
+    [RelayCommand]
+    private Task AddBlockRuleAsync() => AddOverflowRuleAsync(new RuleDefinition(Guid.Empty, Filter?.Id ?? Guid.Empty, RuleKind.Firewall, RuleDirection.Both,
+        IsEnabled: false, Action: FirewallAction.Deny, Notes: "Turned on by a quota"));
+
+    [RelayCommand]
+    private Task AddLimitRuleAsync()
+    {
+        if (!(OverflowLimitKilobytes > 0))
+        {
+            Error = "Enter a limit greater than zero.";
+            return Task.CompletedTask;
+        }
+        return AddOverflowRuleAsync(new RuleDefinition(Guid.Empty, Filter?.Id ?? Guid.Empty, RuleKind.Limit, Direction,
+            IsEnabled: false, LimitBytesPerSecond: (long)Math.Round(OverflowLimitKilobytes * 1024), Notes: "Turned on by a quota"));
+    }
+
+    private async Task AddOverflowRuleAsync(RuleDefinition rule)
+    {
+        if (CreateRule is null || Filter is null)
+            return;
+        if (await CreateRule(rule) is { } saved)
+            OverflowChoices.Add(new RuleChoice(saved, ChoiceText(saved, Filter.Name), true));
+    }
+
+    /// <summary>The reset schedule the fields describe. False (with <see cref="Error"/>) when they are incomplete.</summary>
+    private bool TryBuildReset(out TimeSchedule? schedule)
+    {
+        schedule = null;
+        if (ResetRepeat == QuotaResetRepeat.Never)
+            return true;
+        if (!TimeOnly.TryParseExact(ResetTime.Trim(), ["H:mm", "HH:mm"], System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out TimeOnly time))
+        {
+            Error = "Enter the reset time as HH:mm.";
+            return false;
+        }
+        int minute = time.Hour * 60 + time.Minute;
+        switch (ResetRepeat)
+        {
+            case QuotaResetRepeat.Once when ResetDate is null:
+                Error = "Choose the reset date.";
+                return false;
+            case QuotaResetRepeat.Once:
+                schedule = new TimeSchedule(ScheduleRepeat.Once, minute, DateOnly.FromDateTime(ResetDate.Value));
+                return true;
+            case QuotaResetRepeat.Days when !ResetDays.Any(d => d.IsSelected):
+                Error = "Choose at least one reset day.";
+                return false;
+            case QuotaResetRepeat.Days:
+                schedule = new TimeSchedule(ScheduleRepeat.Days, minute, Days: ResetDays.Where(d => d.IsSelected).Select(d => d.Day).ToList());
+                return true;
+            case QuotaResetRepeat.DayOfMonth:
+                schedule = new TimeSchedule(ScheduleRepeat.DayOfMonth, minute, DayOfMonth: ResetDayOfMonth);
+                return true;
+            default:
+                schedule = new TimeSchedule(ScheduleRepeat.EveryDay, minute);
+                return true;
+        }
     }
 
     public string Title => _original is null ? "New rule" : "Edit rule";
@@ -174,7 +356,7 @@ public sealed partial class RuleEditorViewModel : ObservableObject
     private FilterDefinition? _filter;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsLimit), nameof(IsFirewall), nameof(IsIgnore), nameof(IsPriority))]
+    [NotifyPropertyChangedFor(nameof(IsLimit), nameof(IsFirewall), nameof(IsIgnore), nameof(IsPriority), nameof(IsQuota))]
     private RuleKind _kind;
 
     [ObservableProperty]
@@ -236,6 +418,17 @@ public sealed partial class RuleEditorViewModel : ObservableObject
             Error = "Weight can't be negative.";
             return null;
         }
+        TimeSchedule? reset = null;
+        if (IsQuota)
+        {
+            if (!(QuotaAmount > 0))
+            {
+                Error = "Enter a quota greater than zero.";
+                return null;
+            }
+            if (!TryBuildReset(out reset))
+                return null;
+        }
         return new RuleDefinition(
             _original?.Id ?? Guid.Empty, Filter.Id, Kind, Direction, IsEnabled, Weight,
             string.IsNullOrWhiteSpace(Notes) ? null : Notes.Trim(),
@@ -244,6 +437,11 @@ public sealed partial class RuleEditorViewModel : ObservableObject
             IgnoreLimit: IsIgnore && IgnoreLimit,
             IgnoreData: IsIgnore && IgnoreData,
             ExpiresAt: _original?.ExpiresAt,
-            Priority: IsPriority ? Priority : null);
+            Priority: IsPriority ? Priority : null,
+            QuotaBytes: IsQuota ? (long)Math.Round(QuotaAmount * UnitBytes(QuotaUnit)) : null,
+            QuotaReset: reset,
+            OverflowRuleIds: IsQuota ? OverflowChoices.Where(c => c.IsSelected).Select(c => c.Rule.Id).ToList() : null,
+            OverflowAlert: IsQuota && OverflowAlert,
+            OverflowKillConnections: IsQuota && OverflowKillConnections);
     }
 }

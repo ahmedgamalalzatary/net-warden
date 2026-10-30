@@ -37,6 +37,7 @@ public sealed class CompiledRuleSet
     private readonly CompiledRule[] _limits;
     private readonly CompiledRule[] _ignores;
     private readonly CompiledRule[] _priorities;
+    private readonly CompiledRule[] _quotas;
 
     internal CompiledRuleSet(long generation, Dictionary<Guid, CompiledFilter> filters, IReadOnlyList<CompiledRule> rules)
     {
@@ -48,6 +49,8 @@ public sealed class CompiledRuleSet
         _limits = ordered.Where(r => r.Rule.Kind == RuleKind.Limit).ToArray();
         _ignores = ordered.Where(r => r.Rule.Kind == RuleKind.Ignore).ToArray();
         _priorities = ordered.Where(r => r.Rule.Kind == RuleKind.Priority && r.Rule.Priority is not null).ToArray();
+        _quotas = ordered.Where(r => r.Rule.Kind == RuleKind.Quota).ToArray();
+        QuotaRules = _quotas.Select(r => r.Rule).ToList();
     }
 
     public long Generation { get; }
@@ -57,6 +60,17 @@ public sealed class CompiledRuleSet
     public bool HasFirewallRules => _firewall.Length > 0;
     public bool HasLimitRules => _limits.Length > 0;
     public bool HasPriorityRules => _priorities.Length > 0;
+
+    /// <summary>Every quota rule, enabled or not.</summary>
+    public IReadOnlyList<RuleDefinition> QuotaRules { get; }
+
+    /// <summary>Whether a flow matches a filter.</summary>
+    public bool Matches(Guid filterId, FlowContext flow) =>
+        _filters.TryGetValue(filterId, out var f) && f.Matches(flow, _filters);
+
+    /// <summary>The live quota rules that count this flow.</summary>
+    public IReadOnlyList<RuleDefinition> MatchingQuotas(FlowContext flow, DateTimeOffset now) =>
+        _quotas.Where(q => q.IsLive(now) && Matches(q.Rule.FilterId, flow)).Select(q => q.Rule).ToList();
 
     /// <summary>
     /// Decides a flow. <paramref name="defaultIn"/>/<paramref name="defaultOut"/> apply when no

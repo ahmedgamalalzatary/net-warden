@@ -71,6 +71,7 @@ public enum RuleKind
     Firewall,
     Ignore,
     Priority,
+    Quota,
 }
 
 /// <summary>Priority of a flow's traffic; flows no priority rule matches are Normal.</summary>
@@ -99,7 +100,8 @@ public enum RuleState
 /// <summary>
 /// A rule attached to a filter. Kind-specific fields: <see cref="LimitBytesPerSecond"/>
 /// for limits, <see cref="Action"/> for the blocker, <see cref="IgnoreLimit"/> /
-/// <see cref="IgnoreData"/> for ignore rules, <see cref="Priority"/> for priority rules.
+/// <see cref="IgnoreData"/> for ignore rules, <see cref="Priority"/> for priority rules,
+/// the Quota and Overflow fields for quotas (<see cref="QuotaReset"/> null = never resets).
 /// Weight 0 means "default for the filter".
 /// </summary>
 public sealed record RuleDefinition(
@@ -117,7 +119,12 @@ public sealed record RuleDefinition(
     DateTimeOffset? ExpiresAt = null,
     DateTimeOffset Created = default,
     DateTimeOffset Updated = default,
-    PriorityLevel? Priority = null);
+    PriorityLevel? Priority = null,
+    long? QuotaBytes = null,
+    TimeSchedule? QuotaReset = null,
+    IReadOnlyList<Guid>? OverflowRuleIds = null,
+    bool OverflowAlert = false,
+    bool OverflowKillConnections = false);
 
 /// <summary>The persisted rule configuration. Rule list order breaks weight ties.</summary>
 public sealed class RulesDocument

@@ -47,6 +47,7 @@ public sealed partial class MainViewModel : ObservableObject
         Blocker = new BlockerViewModel(connection, Rules);
         Priorities = new PrioritiesViewModel(() => SettingsFromService, UpdateSettingsAsync);
         Stats = new StatsViewModel(connection, settings, saveSettings, ports, () => SettingsFromService, UpdateSettingsAsync);
+        Quotas = new QuotasViewModel(connection);
         Activity.Updated += () =>
         {
             OnPropertyChanged(nameof(ChartHistory));
@@ -59,6 +60,8 @@ public sealed partial class MainViewModel : ObservableObject
             // The service writes stats every minute; follow along while a range that includes now is shown.
             if (IsStatsTabVisible && _ticks % StatsRefreshTicks == 0 && IsConnected && Stats.IsLive)
                 _ = Stats.RefreshAsync();
+            if (IsQuotasTabVisible && IsConnected)
+                _ = Quotas.RefreshAsync();
         };
         Rules.Reloaded += RefreshRuleStates;
         Blocker.PropertyChanged += (_, e) =>
@@ -77,6 +80,26 @@ public sealed partial class MainViewModel : ObservableObject
     public BlockerViewModel Blocker { get; }
     public PrioritiesViewModel Priorities { get; }
     public StatsViewModel Stats { get; }
+    public QuotasViewModel Quotas { get; }
+
+    /// <summary>A quota with an alert was exceeded.</summary>
+    public event Action<QuotaAlert>? QuotaExceeded;
+
+    /// <summary>Set by the window while the Quotas tab is selected; showing it loads the quotas.</summary>
+    public bool IsQuotasTabVisible
+    {
+        get => _isQuotasTabVisible;
+        set
+        {
+            if (_isQuotasTabVisible == value)
+                return;
+            _isQuotasTabVisible = value;
+            if (value && IsConnected)
+                _ = Quotas.RefreshAsync();
+        }
+    }
+
+    private bool _isQuotasTabVisible;
 
     /// <summary>The service, for dialogs that talk to it directly.</summary>
     public IServiceRequester Service => _connection;
@@ -364,6 +387,10 @@ public sealed partial class MainViewModel : ObservableObject
             case Events.FilterStatus:
                 if (IpcJson.FromElement<PacketFilterStatus>(payload) is { } status)
                     _dispatcher.InvokeAsync(() => Blocker.Status = status);
+                break;
+            case Events.QuotaAlert:
+                if (IpcJson.FromElement<QuotaAlert>(payload) is { } alert)
+                    _dispatcher.InvokeAsync(() => QuotaExceeded?.Invoke(alert));
                 break;
         }
     }

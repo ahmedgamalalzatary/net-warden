@@ -89,6 +89,15 @@ public sealed partial class RulesViewModel(IServiceRequester service) : Observab
     public async Task<bool> SaveRuleAsync(RuleDefinition rule) =>
         await RunAsync(() => service.RequestAsync<RuleDefinition>(Methods.RulesSave, rule)) is not null && await Refresh();
 
+    /// <summary>Saves a new rule and returns it with its id.</summary>
+    public async Task<RuleDefinition?> CreateRuleAsync(RuleDefinition rule)
+    {
+        var saved = await RunAsync(() => service.RequestAsync<RuleDefinition>(Methods.RulesSave, rule));
+        if (saved is not null)
+            await Refresh();
+        return saved;
+    }
+
     public async Task<FilterDefinition?> EnsureAppFilterAsync(AppInfo app)
     {
         var filter = await RunAsync(() => service.RequestAsync<FilterDefinition>(Methods.FiltersEnsureForApp,

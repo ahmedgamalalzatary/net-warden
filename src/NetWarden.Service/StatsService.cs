@@ -77,6 +77,13 @@ public sealed class StatsService(
         return database.Query(query, geo, ResolveTimeZone(query.TimeZoneId));
     }
 
+    /// <summary>What each app and host moved in a range, including what isn't written yet.</summary>
+    public IReadOnlyList<StatsFlowSummary> Flows(DateTimeOffset? from, DateTimeOffset to)
+    {
+        Flush();
+        return database.Flows(from, to);
+    }
+
     public StatsInfo Info()
     {
         Flush();

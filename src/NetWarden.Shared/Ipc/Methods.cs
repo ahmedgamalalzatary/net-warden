@@ -31,6 +31,10 @@ public static class Methods
     public const string StatsInfo = "stats.info";
     public const string StatsDelete = "stats.delete";
     public const string StatsCompact = "stats.compact";
+
+    public const string QuotasStatus = "quotas.status";
+    public const string QuotasReset = "quotas.reset";
+    public const string QuotasInitFromStats = "quotas.initFromStats";
 }
 
 /// <summary>Event names pushed by the service to every client.</summary>
@@ -53,4 +57,7 @@ public static class Events
 
     /// <summary>Payload: <see cref="Contracts.PacketFilterStatus"/>, when filtering starts, stops or fails.</summary>
     public const string FilterStatus = "packetfilter.status";
+
+    /// <summary>Payload: <see cref="Contracts.QuotaAlert"/>, when a quota with an alert is exceeded.</summary>
+    public const string QuotaAlert = "quota.alert";
 }

@@ -14,14 +14,23 @@ public static class BlockedConnectionSweeper
 {
     public static IReadOnlyList<SocketEntry> FindDenied(
         IReadOnlyList<SocketEntry> sockets, CompiledRuleSet rules, ServiceSettings settings,
-        FlowContextFactory contexts, DateTimeOffset now)
+        FlowContextFactory contexts, DateTimeOffset now) =>
+        Find(sockets, contexts, flow => rules.Evaluate(flow, settings.DefaultFirewallIn, settings.DefaultFirewallOut, now).Firewall == FirewallAction.Deny);
+
+    /// <summary>The established connections Windows can reset that match a filter.</summary>
+    public static IReadOnlyList<SocketEntry> FindMatching(
+        IReadOnlyList<SocketEntry> sockets, CompiledRuleSet rules, Guid filterId, FlowContextFactory contexts) =>
+        Find(sockets, contexts, flow => rules.Matches(filterId, flow));
+
+    private static IReadOnlyList<SocketEntry> Find(
+        IReadOnlyList<SocketEntry> sockets, FlowContextFactory contexts, Func<FlowContext, bool> wanted)
     {
         var listening = sockets
             .Where(s => s.Protocol == TransportProtocol.Tcp && s.State == TcpState.Listen)
             .Select(s => (s.ProcessId, s.LocalPort))
             .ToHashSet();
 
-        var denied = new List<SocketEntry>();
+        var found = new List<SocketEntry>();
         foreach (var s in sockets)
         {
             if (s.Protocol != TransportProtocol.Tcp || s.State != TcpState.Established || s.ProcessId == 0 || s.RemoteAddress is null)
@@ -33,9 +42,9 @@ public static class BlockedConnectionSweeper
             var flow = contexts.Create(s.ProcessId, s.Protocol, kind, s.LocalAddress, s.LocalPort, s.RemoteAddress, s.RemotePort);
             if (flow is null)
                 continue;
-            if (rules.Evaluate(flow, settings.DefaultFirewallIn, settings.DefaultFirewallOut, now).Firewall == FirewallAction.Deny)
-                denied.Add(s);
+            if (wanted(flow))
+                found.Add(s);
         }
-        return denied;
+        return found;
     }
 }

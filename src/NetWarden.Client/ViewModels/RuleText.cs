@@ -70,6 +70,7 @@ public static class RuleText
             _ => "?",
         },
         RuleKind.Priority => rule.Priority?.ToString() ?? "?",
+        RuleKind.Quota => rule.QuotaBytes is { } bytes ? ByteFormatter.Size(bytes) : "?",
         _ => "",
     };
 

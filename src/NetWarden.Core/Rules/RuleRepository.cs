@@ -101,6 +101,7 @@ public sealed class RuleRepository
             next.Filters.RemoveAll(f => f.Id == id);
             // Rules belong to their filter and go with it, as in NetLimiter.
             next.Rules.RemoveAll(r => r.FilterId == id);
+            ForgetDeletedTargets(next);
             Commit(next);
         }
     }
@@ -150,7 +151,7 @@ public sealed class RuleRepository
                 Created = index >= 0 ? _document.Rules[index].Created : now,
                 Updated = now,
             };
-            RuleValidator.ValidateRule(saved, _document.Filters);
+            RuleValidator.ValidateRule(saved, _document.Filters, _document.Rules);
 
             var next = Clone();
             if (index >= 0)
@@ -170,6 +171,7 @@ public sealed class RuleRepository
                 throw new RuleValidationException($"Rule {id} not found.");
             var next = Clone();
             next.Rules.RemoveAll(r => r.Id == id);
+            ForgetDeletedTargets(next);
             Commit(next);
         }
     }
@@ -210,6 +212,7 @@ public sealed class RuleRepository
                 return 0;
             var next = Clone();
             int removed = next.Rules.RemoveAll(r => r.ExpiresAt <= now);
+            ForgetDeletedTargets(next);
             Commit(next);
             return removed;
         }
@@ -225,6 +228,17 @@ public sealed class RuleRepository
         !rule.IsEnabled ? RuleState.Disabled
         : rule.ExpiresAt is { } expires && expires <= now ? RuleState.Inactive
         : RuleState.Active;
+
+    /// <summary>Quotas may not point at rules that no longer exist.</summary>
+    private static void ForgetDeletedTargets(RulesDocument document)
+    {
+        var ids = document.Rules.Select(r => r.Id).ToHashSet();
+        for (int i = 0; i < document.Rules.Count; i++)
+        {
+            if (document.Rules[i].OverflowRuleIds is { } targets && targets.Any(t => !ids.Contains(t)))
+                document.Rules[i] = document.Rules[i] with { OverflowRuleIds = targets.Where(ids.Contains).ToList() };
+        }
+    }
 
     private void Commit(RulesDocument next)
     {

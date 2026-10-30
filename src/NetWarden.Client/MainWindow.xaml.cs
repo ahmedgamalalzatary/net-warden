@@ -20,6 +20,7 @@ public partial class MainWindow : Window
                 return;
             vm.Activity.Updated += Chart.Refresh;
             vm.Blocker.RequestArrived += _ => ShowBlockerPrompt();
+            vm.QuotaExceeded += ShowQuotaAlert;
             vm.PropertyChanged += OnViewModelPropertyChanged;
             UpdateInfoPaneWidth();
         };
@@ -30,6 +31,7 @@ public partial class MainWindow : Window
             {
                 vm.IsPrioritiesTabVisible = Tabs.SelectedItem == PrioritiesTab;
                 vm.IsStatsTabVisible = Tabs.SelectedItem == StatsTab;
+                vm.IsQuotasTabVisible = Tabs.SelectedItem == QuotasTab;
             }
         };
     }
@@ -212,7 +214,8 @@ public partial class MainWindow : Window
     {
         if (ViewModel is not { } vm || vm.Rules.Snapshot is not { } snapshot)
             return;
-        var editor = new RuleEditorWindow(new RuleEditorViewModel(rule, snapshot.Filters, filterId, kind),
+        var editorModel = new RuleEditorViewModel(rule, snapshot.Filters, filterId, kind, snapshot.Rules) { CreateRule = vm.Rules.CreateRuleAsync };
+        var editor = new RuleEditorWindow(editorModel,
             async r => await vm.Rules.SaveRuleAsync(r) ? null : vm.Rules.LastError ?? "Saving failed.")
         { Owner = this };
         editor.ShowDialog();
@@ -225,6 +228,26 @@ public partial class MainWindow : Window
     {
         if (!string.IsNullOrEmpty(message))
             MessageBox.Show(this, message, "NetWarden", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    // ----- Quotas -----
+
+    private void AddQuota_Click(object sender, RoutedEventArgs e) => OpenRuleEditor(null, null, RuleKind.Quota);
+
+    private void EditQuota_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { Quotas.Selected: { } row, Rules.Snapshot: { } snapshot }
+            && snapshot.Rules.FirstOrDefault(r => r.Rule.Id == row.Status.RuleId) is { } view)
+            OpenRuleEditor(view.Rule, null);
+    }
+
+    private void QuotasGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e) => EditQuota_Click(sender, e);
+
+    private void ShowQuotaAlert(QuotaAlert alert)
+    {
+        if (ViewModel is not { } vm)
+            return;
+        new QuotaAlertWindow(alert, () => vm.Service.RequestAsync<bool>(Shared.Ipc.Methods.QuotasReset, new QuotaRequest(alert.RuleId))).Show();
     }
 
     // ----- Statistics -----

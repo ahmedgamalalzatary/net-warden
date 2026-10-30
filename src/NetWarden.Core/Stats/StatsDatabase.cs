@@ -20,6 +20,10 @@ public readonly record struct StatsRecord(
     long In,
     long Out);
 
+/// <summary>What one (app, host, port, protocol, user) moved in a time range.</summary>
+public sealed record StatsFlowSummary(string AppId, string AppPath, string Address, string? HostName, int Port,
+    TransportProtocol Protocol, string UserSid, long In, long Out);
+
 /// <summary>
 /// The SQLite stats database. Traffic is stored per minute (<c>slot</c> = Unix seconds at the start
 /// of the minute) and rolled up into hours once it is older than <see cref="MinuteRetention"/>.
@@ -172,6 +176,30 @@ public sealed class StatsDatabase : IDisposable
             reader.Read();
             DateTimeOffset? Time(int i) => reader.IsDBNull(i) ? null : DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64(i));
             return new StatsInfo(FilePath, FileBytes(), reader.GetInt64(0), reader.GetInt32(3), Time(1), Time(2), geoDate);
+        }
+    }
+
+    /// <summary>What each (app, host, port, protocol, user) moved from <paramref name="from"/> (null = the beginning) up to <paramref name="to"/>.</summary>
+    public IReadOnlyList<StatsFlowSummary> Flows(DateTimeOffset? from, DateTimeOffset to)
+    {
+        lock (_lock)
+        {
+            using var cmd = Command("""
+                SELECT a.app_id, a.path, h.address, h.name, t.port, t.protocol, u.sid, SUM(t.bytes_in), SUM(t.bytes_out)
+                FROM traffic t
+                JOIN apps a ON a.id = t.app JOIN hosts h ON h.id = t.host JOIN users u ON u.id = t.user
+                WHERE t.slot >= $from AND t.slot < $to
+                GROUP BY t.app, t.host, t.port, t.protocol, t.user
+                """);
+            cmd.Parameters.AddWithValue("$from", from?.ToUnixTimeSeconds() ?? long.MinValue);
+            cmd.Parameters.AddWithValue("$to", to.ToUnixTimeSeconds());
+            var rows = new List<StatsFlowSummary>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                rows.Add(new StatsFlowSummary(reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                    reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetInt32(4), (TransportProtocol)reader.GetInt32(5),
+                    reader.GetString(6), reader.GetInt64(7), reader.GetInt64(8)));
+            return rows;
         }
     }
 

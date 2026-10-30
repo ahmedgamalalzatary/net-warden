@@ -7,6 +7,7 @@ using NetWarden.Core.Apps;
 using NetWarden.Core.Ipc;
 using NetWarden.Core.Monitoring;
 using NetWarden.Core.Packets;
+using NetWarden.Core.Quotas;
 using NetWarden.Core.Rules;
 using NetWarden.Shared.Contracts;
 using NetWarden.Shared.Ipc;
@@ -53,6 +54,21 @@ public static class ServiceMethods
             .Register(Methods.StatsInfo, _ => Task.Run(stats.Info))
             .Register<StatsDeleteRequest, long>(Methods.StatsDelete, (r, _) => Task.Run(() => stats.Delete(Require(r))))
             .Register(Methods.StatsCompact, _ => Task.Run(stats.Compact));
+
+        // Resolved lazily like the packet filter: QuotaService depends on the IPC server too.
+        var quotas = sp.GetRequiredService<QuotaTracker>();
+        dispatcher
+            .Register(Methods.QuotasStatus, _ => Task.FromResult(quotas.Status().ToList()))
+            .Register<QuotaRequest, bool>(Methods.QuotasReset, (r, _) =>
+            {
+                quotas.Reset(Require(r).RuleId);
+                return Task.FromResult(true);
+            })
+            .Register<QuotaRequest, bool>(Methods.QuotasInitFromStats, (r, _) => Task.Run(() =>
+            {
+                sp.GetRequiredService<QuotaService>().InitFromStats(Require(r).RuleId);
+                return true;
+            }));
         return dispatcher;
     }
 

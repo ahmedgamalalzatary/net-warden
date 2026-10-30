@@ -4,6 +4,7 @@ using NetWarden.Core.Apps;
 using NetWarden.Core.Ipc;
 using NetWarden.Core.Monitoring;
 using NetWarden.Core.Packets;
+using NetWarden.Core.Quotas;
 using NetWarden.Core.Rules;
 using NetWarden.Core.Stats;
 using NetWarden.Shared.Contracts;
@@ -118,6 +119,17 @@ public static class ServiceHost
             sp.GetRequiredService<ZoneClassifier>()));
         services.AddSingleton<StatsService>();
 
+        // Quotas
+        services.AddSingleton(sp => new QuotaTracker(
+            sp.GetRequiredService<RuleRepository>(),
+            sp.GetRequiredService<FlowContextFactory>(),
+            new JsonFileStore<QuotaDocument>(Path.Combine(Options(sp).ResolveDataDirectory(), "quotas.json"),
+                sp.GetRequiredService<ILogger<JsonFileStore<QuotaDocument>>>()),
+            sp.GetRequiredService<TimeProvider>(),
+            TimeZoneInfo.Local,
+            sp.GetRequiredService<ILogger<QuotaTracker>>()));
+        services.AddSingleton<QuotaService>();
+
         // IPC
         services.AddSingleton(ServiceMethods.Create);
         services.AddSingleton(sp => new IpcServer(
@@ -131,6 +143,7 @@ public static class ServiceHost
         services.AddHostedService<RulesService>();
         services.AddHostedService(sp => sp.GetRequiredService<PacketFilterService>());
         services.AddHostedService(sp => sp.GetRequiredService<StatsService>());
+        services.AddHostedService(sp => sp.GetRequiredService<QuotaService>());
 
         configureServices?.Invoke(services);
 

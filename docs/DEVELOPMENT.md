@@ -81,6 +81,8 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 | `stats.info` | - | `StatsInfo` (file, size, records, apps, first/last, geo database date) |
 | `stats.delete` | `StatsDeleteRequest` (from / to / app, all optional) | number of records deleted |
 | `stats.compact` | - | `StatsInfo` after roll-up, cleanup and VACUUM |
+| `quotas.status` | - | `QuotaStatus[]` |
+| `quotas.reset` / `quotas.initFromStats` | `QuotaRequest { ruleId }` | `true` |
 
 | Event | Payload |
 |---|---|
@@ -89,6 +91,7 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 | `settings.changed` | `ServiceSettings` |
 | `blocker.request` / `blocker.resolved` | `BlockerRequest` / `BlockerResolved` |
 | `packetfilter.status` | `PacketFilterStatus` |
+| `quota.alert` | `QuotaAlert` |
 
 ## Release / installer
 - `scripts\build-release.ps1` publishes the client as one self-contained file (renamed `NetWarden.exe`;
@@ -179,6 +182,19 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
   now. Double-clicking an app narrows the view to it and lists its hosts. CSV exports carry raw bytes, a BOM
   for Excel, and a leading `'` on text a spreadsheet would treat as a formula.
 - Live check: `StatsLiveTests` (admin) sends 500 KB over loopback through real ETW and finds it in `stats.query`.
+
+## Quota notes
+- Rule kind `Quota`: `QuotaBytes`, `QuotaReset` (a `TimeSchedule`; null = never) and the overflow fields. A quota counts all
+  traffic of its filter together (per-type settings don't split it). In = download, Out = upload, Both = sum.
+- `QuotaService` feeds `TrafficMonitor.TrafficRecorded` to `QuotaTracker`; flows an "ignore data" rule matches are skipped.
+  Counters live in `quotas.json`: saved every 60 s, on every overflow or reset, and on stop, so a crash loses at most a minute.
+- `Tick()` (1 s): a schedule moment that passed resets the counter; used >= quota starts the overflow, otherwise it ends.
+  Editing a schedule or moving the clock back keeps the count. Disabling or deleting a quota ends its overflow.
+- Overflow turns on the listed rules and remembers which it really changed (`EnabledRuleIds`); ending it turns off only those.
+  Deleting a rule removes it from every quota's list.
+- The alert (`quota.alert` event) and killing connections (IPv4 TCP, Windows' limit) fire once per overflow.
+- Init from stats sums `stats.db` since the last reset. Stats know no pid or local endpoint, so filters on those can't match
+  exactly; the service port stands in for the remote port. Zones the Save toggles leave out aren't in the stats.
 
 ## Rules semantics
 - Filter = AND of functions; a function matches if any of its values matches; "is not" negates.

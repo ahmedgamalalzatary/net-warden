@@ -524,6 +524,43 @@
             </ScrollViewer>
         </TabItem>
 
+        <!-- Quotas -->
+        <TabItem x:Name="QuotasTab" Header="Quotas" Padding="14,4">
+            <DockPanel Margin="8">
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8" IsEnabled="{Binding IsConnected}">
+                    <Button Content="Add quota" Padding="10,3" Click="AddQuota_Click" />
+                    <Button Content="Edit" Padding="10,3" Margin="8,0,0,0" Click="EditQuota_Click" />
+                    <Button Content="Reset" Padding="10,3" Margin="24,0,0,0" Command="{Binding Quotas.ResetCommand}" CommandParameter="{Binding Quotas.Selected}"
+                            ToolTip="Put the counter back to zero and end the overflow" />
+                    <Button Content="Init from statistics" Padding="10,3" Margin="8,0,0,0" Command="{Binding Quotas.InitFromStatsCommand}" CommandParameter="{Binding Quotas.Selected}"
+                            ToolTip="Set the counter to what the statistics recorded since the last reset" />
+                    <TextBlock Text="{Binding Quotas.LastError}" Foreground="{DynamicResource BadBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <DataGrid x:Name="QuotasGrid" ItemsSource="{Binding Quotas.Rows}" SelectedItem="{Binding Quotas.Selected}"
+                          AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single" HeadersVisibility="Column"
+                          GridLinesVisibility="None" RowHeight="26" Background="{DynamicResource PanelBackground}"
+                          BorderBrush="{DynamicResource BorderBrush}" MouseDoubleClick="QuotasGrid_MouseDoubleClick">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="For" Binding="{Binding Name}" Width="*" MinWidth="160" />
+                        <DataGridTextColumn Header="Dir" Binding="{Binding Direction}" Width="55" MinWidth="55" />
+                        <DataGridTextColumn Header="Used" Binding="{Binding Used}" Width="90" MinWidth="70" ElementStyle="{StaticResource NumberCell}" />
+                        <DataGridTextColumn Header="Quota" Binding="{Binding Limit}" Width="90" MinWidth="70" ElementStyle="{StaticResource NumberCell}" />
+                        <DataGridTemplateColumn Header="Share" Width="130" MinWidth="80">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <ProgressBar Value="{Binding Share, Mode=OneWay}" Maximum="1" Height="6" Margin="6,0" VerticalAlignment="Center"
+                                                 Foreground="{DynamicResource ChartInBrush}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="State" Binding="{Binding State}" Width="85" MinWidth="70" />
+                        <DataGridTextColumn Header="Exceeded at" Binding="{Binding ExceededAt}" Width="130" MinWidth="80" />
+                        <DataGridTextColumn Header="Next reset" Binding="{Binding NextReset}" Width="130" MinWidth="80" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </TabItem>
+
         <!-- Statistics -->
         <TabItem x:Name="StatsTab" Header="Statistics" Padding="14,4">
             <DockPanel Margin="8" DataContext="{Binding Stats}">

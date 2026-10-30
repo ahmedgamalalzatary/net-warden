@@ -72,7 +72,38 @@ public static class RuleValidator
         }
     }
 
-    public static void ValidateRule(RuleDefinition rule, IReadOnlyList<FilterDefinition> filters)
+    public static void ValidateSchedule(TimeSchedule schedule)
+    {
+        if (schedule.MinuteOfDay is < 0 or >= 24 * 60)
+            throw new RuleValidationException("The time of day is out of range.");
+        bool ok = schedule.Repeat switch
+        {
+            ScheduleRepeat.Once => schedule.Date is not null,
+            ScheduleRepeat.EveryDay => true,
+            ScheduleRepeat.Days => schedule.Days is { Count: > 0 } days && days.All(Enum.IsDefined),
+            ScheduleRepeat.DayOfMonth => schedule.DayOfMonth is >= 1 and <= 31,
+            _ => false,
+        };
+        if (!ok)
+            throw new RuleValidationException($"The {schedule.Repeat} schedule is incomplete or out of range.");
+    }
+
+    private static void ValidateQuota(RuleDefinition rule, IReadOnlyList<RuleDefinition> allRules)
+    {
+        if (rule.QuotaBytes is not > 0)
+            throw new RuleValidationException("A quota must be greater than zero.");
+        if (rule.QuotaReset is { } reset)
+            ValidateSchedule(reset);
+        foreach (Guid target in rule.OverflowRuleIds ?? [])
+        {
+            if (target == rule.Id)
+                throw new RuleValidationException("A quota can't enable itself.");
+            if (allRules.All(r => r.Id != target))
+                throw new RuleValidationException($"Rule {target} not found.");
+        }
+    }
+
+    public static void ValidateRule(RuleDefinition rule, IReadOnlyList<FilterDefinition> filters, IReadOnlyList<RuleDefinition>? allRules = null)
     {
         if (filters.All(f => f.Id != rule.FilterId))
             throw new RuleValidationException($"Filter {rule.FilterId} not found.");
@@ -95,6 +126,9 @@ public static class RuleValidator
             case RuleKind.Priority:
                 if (rule.Priority is not { } level || !Enum.IsDefined(level))
                     throw new RuleValidationException("A priority rule needs a priority level.");
+                break;
+            case RuleKind.Quota:
+                ValidateQuota(rule, allRules ?? []);
                 break;
         }
         if (rule.Weight < 0)
