@@ -6,7 +6,7 @@
         xmlns:vm="clr-namespace:NetWarden.Client.ViewModels"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:RuleEditorViewModel}"
-        Title="{Binding Title}" Width="460" SizeToContent="Height" ResizeMode="NoResize"
+        Title="{Binding Title}" Width="560" SizeToContent="Height" MaxHeight="820" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
         Background="{DynamicResource WindowBackground}" FontFamily="Segoe UI" FontSize="13">
     <Window.Resources>
@@ -16,6 +16,7 @@
             <Setter Property="Margin" Value="0,6,12,6" />
         </Style>
     </Window.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
     <StackPanel Margin="16">
         <Grid>
             <Grid.ColumnDefinitions>
@@ -110,6 +111,44 @@
                 <TextBlock Text="KB/s" VerticalAlignment="Center" />
             </StackPanel>
         </StackPanel>
+        <!-- Time conditions -->
+        <DockPanel Margin="0,12,0,4">
+            <Button DockPanel.Dock="Right" Content="Add" Padding="10,2" Command="{Binding AddConditionCommand}" />
+            <TextBlock Text="Time conditions" FontWeight="SemiBold" VerticalAlignment="Center"
+                       ToolTip="Start enables the rule, Stop disables it, Reset zeroes a quota, Delete removes the rule" />
+        </DockPanel>
+        <ItemsControl x:Name="ConditionsList" ItemsSource="{Binding Conditions}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type vm:ConditionItem}">
+                    <StackPanel Margin="0,2">
+                        <StackPanel Orientation="Horizontal">
+                            <CheckBox IsChecked="{Binding IsEnabled}" MinWidth="0" VerticalAlignment="Center" ToolTip="Enabled" />
+                            <ComboBox Width="90" Margin="4,0,0,0" SelectedItem="{Binding Action}"
+                                      ItemsSource="{Binding DataContext.ConditionActions, ElementName=ConditionsList}" />
+                            <ComboBox Width="110" Margin="6,0,0,0" SelectedItem="{Binding Repeat}"
+                                      ItemsSource="{Binding DataContext.ConditionRepeats, ElementName=ConditionsList}" />
+                            <DatePicker Width="124" Margin="6,0,0,0" SelectedDate="{Binding Date}" Visibility="{Binding IsOnce, Converter={StaticResource BoolToVis}}" />
+                            <ComboBox Width="64" Margin="6,0,0,0" SelectedItem="{Binding DayOfMonth}"
+                                      ItemsSource="{Binding DataContext.DaysOfMonth, ElementName=ConditionsList}"
+                                      Visibility="{Binding IsDayOfMonth, Converter={StaticResource BoolToVis}}" />
+                            <TextBox Width="52" Margin="6,0,0,0" Padding="4,3" Text="{Binding Time, UpdateSourceTrigger=PropertyChanged}" ToolTip="Time of day, HH:mm" />
+                            <Button Content="✕" Padding="6,1" Margin="6,0,0,0" ToolTip="Remove"
+                                    Command="{Binding DataContext.RemoveConditionCommand, ElementName=ConditionsList}" CommandParameter="{Binding}" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding Days}" Margin="24,2,0,0" Visibility="{Binding IsDays, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,0,8,0" MinWidth="0" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
         <CheckBox Content="Enabled" IsChecked="{Binding IsEnabled}" Margin="0,8,0,0" />
         <TextBlock Text="{Binding Error}" Foreground="{DynamicResource BadBrush}" Margin="0,10,0,0" TextWrapping="Wrap" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
@@ -117,4 +156,5 @@
             <Button Content="Cancel" Width="90" Padding="0,4" Margin="8,0,0,0" IsCancel="True" />
         </StackPanel>
     </StackPanel>
+    </ScrollViewer>
 </Window>

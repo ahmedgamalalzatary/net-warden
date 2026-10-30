@@ -27,6 +27,7 @@ public sealed partial class RuleItem(RuleView view) : ObservableObject
     public int Weight => View.EffectiveWeight;
     public string State => View.State.ToString();
     public string Expires => Rule.ExpiresAt?.ToLocalTime().ToString("g") ?? "";
+    public string Schedule => RuleText.Schedule(Rule);
     public string Notes => Rule.Notes ?? "";
 }
 

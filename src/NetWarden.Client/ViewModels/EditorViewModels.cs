@@ -179,6 +179,87 @@ public sealed partial class RuleChoice(RuleDefinition rule, string text, bool se
     private bool _isSelected = selected;
 }
 
+/// <summary>Turns the fields of a time schedule into a <see cref="TimeSchedule"/>.</summary>
+public static class ScheduleFields
+{
+    public static IReadOnlyList<DayChoice> NewDays(IReadOnlyList<DayOfWeek>? selected) =>
+        [.. new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday }
+            .Select(d => new DayChoice(d, selected?.Contains(d) == true))];
+
+    public static string TimeText(int minuteOfDay) => TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(minuteOfDay)).ToString("HH:mm");
+
+    /// <summary>The schedule, or null with an error message when the fields are incomplete.</summary>
+    public static TimeSchedule? Build(ScheduleRepeat repeat, string time, DateTime? date, IReadOnlyList<DayChoice> days, int dayOfMonth, out string? error)
+    {
+        error = null;
+        if (!TimeOnly.TryParseExact(time.Trim(), ["H:mm", "HH:mm"], System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out TimeOnly parsed))
+        {
+            error = "Enter the time as HH:mm.";
+            return null;
+        }
+        int minute = parsed.Hour * 60 + parsed.Minute;
+        switch (repeat)
+        {
+            case ScheduleRepeat.Once when date is null:
+                error = "Choose the date.";
+                return null;
+            case ScheduleRepeat.Once:
+                return new TimeSchedule(repeat, minute, DateOnly.FromDateTime(date.Value));
+            case ScheduleRepeat.Days when !days.Any(d => d.IsSelected):
+                error = "Choose at least one day.";
+                return null;
+            case ScheduleRepeat.Days:
+                return new TimeSchedule(repeat, minute, Days: days.Where(d => d.IsSelected).Select(d => d.Day).ToList());
+            case ScheduleRepeat.DayOfMonth:
+                return new TimeSchedule(repeat, minute, DayOfMonth: dayOfMonth);
+            default:
+                return new TimeSchedule(repeat, minute);
+        }
+    }
+}
+
+/// <summary>One row of the rule editor's time conditions.</summary>
+public sealed partial class ConditionItem : ObservableObject
+{
+    public ConditionItem(ScheduleCondition? condition = null)
+    {
+        var when = condition?.When;
+        _action = condition?.Action ?? ScheduleAction.Start;
+        _isEnabled = condition?.IsEnabled ?? true;
+        _repeat = when?.Repeat ?? ScheduleRepeat.EveryDay;
+        _time = ScheduleFields.TimeText(when?.MinuteOfDay ?? 0);
+        _date = when?.Date?.ToDateTime(TimeOnly.MinValue);
+        _dayOfMonth = when?.DayOfMonth ?? 1;
+        Days = ScheduleFields.NewDays(when?.Days);
+    }
+
+    public IReadOnlyList<DayChoice> Days { get; }
+
+    [ObservableProperty]
+    private ScheduleAction _action;
+
+    [ObservableProperty]
+    private bool _isEnabled;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOnce), nameof(IsDays), nameof(IsDayOfMonth))]
+    private ScheduleRepeat _repeat;
+
+    [ObservableProperty]
+    private string _time;
+
+    [ObservableProperty]
+    private DateTime? _date;
+
+    [ObservableProperty]
+    private int _dayOfMonth;
+
+    public bool IsOnce => Repeat == ScheduleRepeat.Once;
+    public bool IsDays => Repeat == ScheduleRepeat.Days;
+    public bool IsDayOfMonth => Repeat == ScheduleRepeat.DayOfMonth;
+}
+
 public sealed partial class RuleEditorViewModel : ObservableObject
 {
     private readonly RuleDefinition? _original;
@@ -205,11 +286,12 @@ public sealed partial class RuleEditorViewModel : ObservableObject
         (_quotaAmount, _quotaUnit) = AmountOf(original?.QuotaBytes ?? 1024L * 1024 * 1024);
         var reset = original?.QuotaReset;
         _resetRepeat = reset is null ? QuotaResetRepeat.Never : (QuotaResetRepeat)Enum.Parse(typeof(QuotaResetRepeat), reset.Repeat.ToString());
-        _resetTime = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(reset?.MinuteOfDay ?? 0)).ToString("HH:mm");
+        _resetTime = ScheduleFields.TimeText(reset?.MinuteOfDay ?? 0);
         _resetDate = reset?.Date?.ToDateTime(TimeOnly.MinValue);
         _resetDayOfMonth = reset?.DayOfMonth ?? 1;
-        ResetDays = [.. new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday }
-            .Select(d => new DayChoice(d, reset?.Days?.Contains(d) == true))];
+        ResetDays = ScheduleFields.NewDays(reset?.Days);
+        foreach (var condition in original?.Schedule ?? [])
+            Conditions.Add(new ConditionItem(condition));
         _overflowAlert = original?.OverflowAlert ?? true;
         _overflowKillConnections = original?.OverflowKillConnections ?? false;
         foreach (var view in rules ?? [])
@@ -225,6 +307,19 @@ public sealed partial class RuleEditorViewModel : ObservableObject
     public IReadOnlyList<int> DaysOfMonth { get; } = Enumerable.Range(1, 31).ToList();
     public IReadOnlyList<DayChoice> ResetDays { get; }
     public ObservableCollection<RuleChoice> OverflowChoices { get; } = [];
+    public ObservableCollection<ConditionItem> Conditions { get; } = [];
+    public IReadOnlyList<ScheduleAction> ConditionActions { get; } = Enum.GetValues<ScheduleAction>();
+    public IReadOnlyList<ScheduleRepeat> ConditionRepeats { get; } = Enum.GetValues<ScheduleRepeat>();
+
+    [RelayCommand]
+    private void AddCondition() => Conditions.Add(new ConditionItem());
+
+    [RelayCommand]
+    private void RemoveCondition(ConditionItem? item)
+    {
+        if (item is not null)
+            Conditions.Remove(item);
+    }
 
     [ObservableProperty]
     private double _quotaAmount;
@@ -314,34 +409,10 @@ public sealed partial class RuleEditorViewModel : ObservableObject
         schedule = null;
         if (ResetRepeat == QuotaResetRepeat.Never)
             return true;
-        if (!TimeOnly.TryParseExact(ResetTime.Trim(), ["H:mm", "HH:mm"], System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.None, out TimeOnly time))
-        {
-            Error = "Enter the reset time as HH:mm.";
-            return false;
-        }
-        int minute = time.Hour * 60 + time.Minute;
-        switch (ResetRepeat)
-        {
-            case QuotaResetRepeat.Once when ResetDate is null:
-                Error = "Choose the reset date.";
-                return false;
-            case QuotaResetRepeat.Once:
-                schedule = new TimeSchedule(ScheduleRepeat.Once, minute, DateOnly.FromDateTime(ResetDate.Value));
-                return true;
-            case QuotaResetRepeat.Days when !ResetDays.Any(d => d.IsSelected):
-                Error = "Choose at least one reset day.";
-                return false;
-            case QuotaResetRepeat.Days:
-                schedule = new TimeSchedule(ScheduleRepeat.Days, minute, Days: ResetDays.Where(d => d.IsSelected).Select(d => d.Day).ToList());
-                return true;
-            case QuotaResetRepeat.DayOfMonth:
-                schedule = new TimeSchedule(ScheduleRepeat.DayOfMonth, minute, DayOfMonth: ResetDayOfMonth);
-                return true;
-            default:
-                schedule = new TimeSchedule(ScheduleRepeat.EveryDay, minute);
-                return true;
-        }
+        var repeat = Enum.Parse<ScheduleRepeat>(ResetRepeat.ToString());
+        schedule = ScheduleFields.Build(repeat, ResetTime, ResetDate, ResetDays, ResetDayOfMonth, out string? error);
+        Error = error;
+        return schedule is not null;
     }
 
     public string Title => _original is null ? "New rule" : "Edit rule";
@@ -429,6 +500,16 @@ public sealed partial class RuleEditorViewModel : ObservableObject
             if (!TryBuildReset(out reset))
                 return null;
         }
+        var schedule = new List<ScheduleCondition>();
+        foreach (var item in Conditions)
+        {
+            if (ScheduleFields.Build(item.Repeat, item.Time, item.Date, item.Days, item.DayOfMonth, out string? error) is not { } when)
+            {
+                Error = $"Time condition {Conditions.IndexOf(item) + 1}: {error}";
+                return null;
+            }
+            schedule.Add(new ScheduleCondition(item.Action, when, item.IsEnabled));
+        }
         return new RuleDefinition(
             _original?.Id ?? Guid.Empty, Filter.Id, Kind, Direction, IsEnabled, Weight,
             string.IsNullOrWhiteSpace(Notes) ? null : Notes.Trim(),
@@ -442,6 +523,7 @@ public sealed partial class RuleEditorViewModel : ObservableObject
             QuotaReset: reset,
             OverflowRuleIds: IsQuota ? OverflowChoices.Where(c => c.IsSelected).Select(c => c.Rule.Id).ToList() : null,
             OverflowAlert: IsQuota && OverflowAlert,
-            OverflowKillConnections: IsQuota && OverflowKillConnections);
+            OverflowKillConnections: IsQuota && OverflowKillConnections,
+            Schedule: schedule.Count > 0 ? schedule : null);
     }
 }

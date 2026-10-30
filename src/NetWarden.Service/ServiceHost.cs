@@ -130,6 +130,16 @@ public static class ServiceHost
             sp.GetRequiredService<ILogger<QuotaTracker>>()));
         services.AddSingleton<QuotaService>();
 
+        // Scheduler
+        services.AddSingleton(sp => new RuleScheduler(
+            sp.GetRequiredService<RuleRepository>(),
+            new JsonFileStore<SchedulerState>(Path.Combine(Options(sp).ResolveDataDirectory(), "scheduler.json"),
+                sp.GetRequiredService<ILogger<JsonFileStore<SchedulerState>>>()),
+            sp.GetRequiredService<TimeProvider>(),
+            TimeZoneInfo.Local,
+            id => sp.GetRequiredService<QuotaTracker>().Reset(id),
+            sp.GetRequiredService<ILogger<RuleScheduler>>()));
+
         // IPC
         services.AddSingleton(ServiceMethods.Create);
         services.AddSingleton(sp => new IpcServer(
@@ -144,6 +154,7 @@ public static class ServiceHost
         services.AddHostedService(sp => sp.GetRequiredService<PacketFilterService>());
         services.AddHostedService(sp => sp.GetRequiredService<StatsService>());
         services.AddHostedService(sp => sp.GetRequiredService<QuotaService>());
+        services.AddHostedService<SchedulerService>();
 
         configureServices?.Invoke(services);
 

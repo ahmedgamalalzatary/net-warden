@@ -133,6 +133,14 @@ public static class RuleValidator
         }
         if (rule.Weight < 0)
             throw new RuleValidationException("Weight can't be negative.");
+        foreach (var condition in rule.Schedule ?? [])
+        {
+            if (!Enum.IsDefined(condition.Action))
+                throw new RuleValidationException("Unknown time condition action.");
+            if (condition.Action == ScheduleAction.Reset && rule.Kind != RuleKind.Quota)
+                throw new RuleValidationException("Only quota rules can be reset.");
+            ValidateSchedule(condition.When);
+        }
     }
 
     /// <summary>Address or "*" for the UI's quick checks; true if the text is a valid range.</summary>

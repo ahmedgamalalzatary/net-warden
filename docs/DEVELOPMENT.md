@@ -196,6 +196,14 @@ $env:NETWARDEN_E2E = '1'; dotnet test --filter "FullyQualifiedName~E2E"
 - Init from stats sums `stats.db` since the last reset. Stats know no pid or local endpoint, so filters on those can't match
   exactly; the service port stands in for the remote port. Zones the Save toggles leave out aren't in the stats.
 
+## Scheduler notes
+- `RuleDefinition.Schedule` lists `ScheduleCondition`s: Start, Stop, Reset (quotas only) or Delete at the moments of a `TimeSchedule`.
+- `RuleScheduler.Tick()` (1 s) fires each moment in (last run, now] once, oldest first per rule, so moments missed while
+  stopped still apply and the latest one wins. A manual change after a moment stays until the next moment.
+- `scheduler.json` holds the last run. The first run ever and a clock moved back fire nothing. A moment before a rule was
+  created fires nothing either, because it is older than the last run.
+- Times are the service computer's local time; a day of month past the month's end means its last day.
+
 ## Rules semantics
 - Filter = AND of functions; a function matches if any of its values matches; "is not" negates.
 - Composite = (any base filter matches) AND its own functions; base filters can't be composite.

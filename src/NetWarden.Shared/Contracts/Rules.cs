@@ -124,7 +124,8 @@ public sealed record RuleDefinition(
     TimeSchedule? QuotaReset = null,
     IReadOnlyList<Guid>? OverflowRuleIds = null,
     bool OverflowAlert = false,
-    bool OverflowKillConnections = false);
+    bool OverflowKillConnections = false,
+    IReadOnlyList<ScheduleCondition>? Schedule = null);
 
 /// <summary>The persisted rule configuration. Rule list order breaks weight ties.</summary>
 public sealed class RulesDocument

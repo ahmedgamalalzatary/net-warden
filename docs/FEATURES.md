@@ -58,8 +58,8 @@ Status: [ ] todo  [~] in progress  [x] done
 - [x] 7.3 Quota status, reset, init from stats
 
 ## Phase 8 - Scheduler
-- [ ] 8.1 Time conditions on any rule: start / stop / reset / delete
-- [ ] 8.2 Once, every day, selected days, day of month
+- [x] 8.1 Time conditions on any rule: start / stop / reset / delete
+- [x] 8.2 Once, every day, selected days, day of month
 
 ## Phase 9 - Connection log & history
 - [ ] 9.1 Realtime connection log: connect/accept/listen/closed, allowed/blocked, start/stop/clear, export

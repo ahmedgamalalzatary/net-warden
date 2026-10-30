@@ -74,6 +74,22 @@ public static class RuleText
         _ => "",
     };
 
+    /// <summary>The enabled time conditions of a rule, for the rule list.</summary>
+    public static string Schedule(RuleDefinition rule) =>
+        string.Join("; ", (rule.Schedule ?? []).Where(c => c.IsEnabled).Select(c => $"{c.Action} {Describe(c.When)}"));
+
+    public static string Describe(TimeSchedule s)
+    {
+        string time = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(s.MinuteOfDay)).ToString("HH:mm");
+        return s.Repeat switch
+        {
+            ScheduleRepeat.Once => $"{s.Date:yyyy-MM-dd} {time}",
+            ScheduleRepeat.Days => $"{string.Join(", ", (s.Days ?? []).Select(d => d.ToString()[..3]))} {time}",
+            ScheduleRepeat.DayOfMonth => $"day {s.DayOfMonth} {time}",
+            _ => $"every day {time}",
+        };
+    }
+
     public static string Kind(RuleKind kind) => kind switch
     {
         RuleKind.Firewall => "Blocker",

@@ -778,6 +778,7 @@
                         <DataGridTextColumn Header="Weight" Binding="{Binding Weight}" Width="66" />
                         <DataGridTextColumn Header="State" Binding="{Binding State}" Width="75" />
                         <DataGridTextColumn Header="Expires" Binding="{Binding Expires}" Width="120" />
+                        <DataGridTextColumn Header="Schedule" Binding="{Binding Schedule}" Width="220" />
                         <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" Width="*" />
                     </DataGrid.Columns>
                 </DataGrid>
